@@ -11,9 +11,19 @@
 #define APP_H_
 
 
+#include "phys_cc1350.h"
+#include "plug_null.h"
+#include "serf.h"
+#include "ser.h"
+#include "sysio.h"
+#include "tcv.h"
+
+
 // Maximum sizes
 #define RECORD_SIZE 20
 #define DATABASE_SIZE 40
+#define PACKET_LEN 250
+
 
 // Message Types
 #define DIS_REQ 0x00
@@ -23,11 +33,13 @@
 #define RET_REC 0x04
 #define RES_MSG 0x05
 
+
 // Response message statuses
 #define SUCCESS 0x01
 #define DATA_FULL 0x02
 #define DELETE_FAIL 0x03
 #define NO_ENTRY 0x04
+
 
 /*** Message structures ***/
 
@@ -56,7 +68,7 @@ struct newRecordMsg {
   byte senderID;
   byte receiverID;
   char record[RECORD_SIZE];
-}
+};
 
 /*
  * Message is sent when a sender node wishes to
@@ -104,6 +116,7 @@ struct responseMsg {
   byte padding;
   char record[RECORD_SIZE];
 };
+
 /*
  * The Database struct
  * contains ownerID timeStamp and string message
