@@ -111,7 +111,7 @@ struct responseMsg {
 struct DB{
 	word ownerID;
 	lword timeStamp;
-	char message[20];
+	char record[RECORD_SIZE];
 };
 
 #endif
