@@ -104,8 +104,15 @@ struct responseMsg {
   byte padding;
   char record[RECORD_SIZE];
 };
-
-
+/*
+ * The Database struct
+ * contains ownerID timeStamp and string message
+ */
+struct DB{
+	word ownerID;
+	byte timeStamp;
+	char message[20];
+};
 
 #endif
 
