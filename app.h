@@ -110,7 +110,7 @@ struct responseMsg {
  */
 struct DB{
 	word ownerID;
-	byte timeStamp;
+	lword timeStamp;
 	char message[20];
 };
 
