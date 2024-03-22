@@ -27,14 +27,20 @@ byte neighborCount = 0;
 // Event variables
 byte sending = YES;
 
+
 /*
  * Receiver fsm: Waits for packets from other
- * nodes and then processes them.
+ * nodes, parses them, and then sends a packet
+ * response.
 */
 fsm receiver
 {
+	// Default Variables
 	address packet;
-	byte* type;
+
+	// Packet Payloads
+	struct discoveryMsg *dReqPayload;
+
 
 	// Wait to receive packet
 	state WAIT_PKT:
@@ -42,27 +48,56 @@ fsm receiver
 
 	// Received packet
 	state RECEIVED_PKT:
-		type = (byte*)(packet+2);
+		byte *type = (byte*)(packet+2);
 
-		// Check type of packet
-		// switch (*type) {
-		// 	case DIS_REQ: 	proceed WAIT_PKT;	//todo
-		// 	case DIS_RES: 	proceed WAIT_PKT;	//todo
-		// 	case NEW_REC: 	proceed WAIT_PKT;	//todo
-		// 	case DEL_REC: 	proceed WAIT_PKT;	//todo
-		// 	case RET_REC: 	proceed WAIT_PKT;	//todo
-		// 	case RES_MSG: 	proceed WAIT_PKT;	//todo
-		// 	default: 		proceed WAIT_PKT;
-		// }
+		//Check type of packet
+		switch (*type) {
+			case DIS_REQ: 	proceed DISCOVER_REQ_START;
+			case DIS_RES: 	proceed WAIT_PKT;	//todo
+			case NEW_REC: 	proceed WAIT_PKT;	//todo
+			case DEL_REC: 	proceed WAIT_PKT;	//todo
+			case RET_REC: 	proceed WAIT_PKT;	//todo
+			case RES_MSG: 	proceed WAIT_PKT;	//todo
+			default: 		proceed WAIT_PKT;
+		}
 
-	// Test a packet receive
-	state RECEIVE_TEST:
-		ser_outf(RECEIVE_TEST, "Received type: %u", type);
+
+	// ### START | DISCOVER REQUEST PACKET | START ###
+
+	// Check packet payload, and build payload if in same group
+	state DISCOVER_REQ_START:
+		struct discoveryMsg *payload = (struct discoveryMsg*)(packet+2);
+
+		// If not in same group, end protocol
+		if (payload->groupID != groupID) {
+			proceed WAIT_PKT;
+		}
+
+		// Build discovery response payload
+		dReqPayload = (struct discoveryMsg*)umalloc(sizeof(struct discoveryMsg));
+		dReqPayload->groupID = groupID;
+		dReqPayload->type = DIS_RES;
+		dReqPayload->requestNum = payload->requestNum;
+		dReqPayload->senderID = nodeID;
+		dReqPayload->receiverID = payload->senderID;
+	
+	// Create packet and send, then end protocol
+	state DISCOVER_REQ_SEND:
+		packet = tcv_wnp(DISCOVER_REQ_SEND, sfd, PACKET_LEN);
+		packet[0] = NETWORK_ID;
+
+		// Add payload to packet
+		struct discoveryMsg* ptr = (struct discoveryMsg *)(packet+1);
+		*ptr = *dReqPayload;
+
+		// Send packet and free payload from memory
+		tcv_endp(packet);
+		ufree(dReqPayload);
+
+		// End protocol
 		proceed WAIT_PKT;
 
-	// ### DISCOVER REQUEST PACKET ###
-	state DISCOVER_REQ:
-
+	// ### END | DISCOVER REQUEST PACKET | END ###
 }
 
 /*
