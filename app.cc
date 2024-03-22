@@ -94,11 +94,11 @@ fsm root
 
 	switch (c)
 	{
+		case 'd': case 'D': proceed DISCOVER_START;
 		case 'g': case 'G': proceed MENU; 		// todo
 		case 'n': case 'N': proceed MENU; 		// todo
 		case 'f': case 'F': proceed MENU; 		// todo
 		case 'c': case 'C': proceed MENU; 		// todo
-		case 'd': case 'D': proceed MENU; 		// todo
 		case 'r': case 'R': proceed MENU; 		// todo
 		case 's': case 'S': proceed MENU; 		// todo
 		case 'e': case 'E': proceed MENU; 		// todo
