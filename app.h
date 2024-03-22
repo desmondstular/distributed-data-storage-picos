@@ -10,6 +10,7 @@
 #ifndef APP_H_
 #define APP_H_
 
+// PICOS Libraries
 #include "phys_cc1350.h"
 #include "plug_null.h"
 #include "serf.h"
@@ -17,9 +18,16 @@
 #include "sysio.h"
 #include "tcv.h"
 
+// Millisecond for PICOS
+#define MS (1024/1000)
+
+// Default Network ID
+#define NETWORK_ID 0
+
 // Maximum sizes
 #define RECORD_SIZE 20
 #define DATABASE_SIZE 40
+#define MAX_NEIGHBORS 25
 #define PACKET_LEN 250
 
 // Message Types
@@ -35,6 +43,8 @@
 #define DATA_FULL 0x02
 #define DELETE_FAIL 0x03
 #define NO_ENTRY 0x04
+
+
 
 /*** Message structures ***/
 

@@ -20,6 +20,13 @@ byte nodeID = 1;
 struct dbEntry db[DATABASE_SIZE];
 byte entryCount = 0;
 
+// Reachable neighbors
+byte neighbors[MAX_NEIGHBORS];
+byte neighborCount = 0;
+
+// Event variables
+byte sending = YES;
+
 /*
  * Receiver fsm: Waits for packets from other
  * nodes and then processes them.
@@ -53,9 +60,14 @@ fsm receiver
  */
 fsm root
 {
+	// Main Variables
 	int c;
 	address packet;
 	struct discoveryMsg msg;
+
+	// Discovery Request Protocol Variables
+	int discSendCount;
+	struct discoveryMsg *discPayload;
 
 	// Initialize node
 	state INIT_SESSION : phys_cc1350(0, PACKET_LEN);
@@ -73,11 +85,11 @@ fsm root
 	tcv_control(sfd, PHYSOPT_ON, NULL);
 
 	// Show sender menu and get input
-	state MENU :
+	state MENU:
 		ser_outf(MENU, "\r\nGroup %u Device #%u (%u/%u records)\r\n(G)roup ID\r\n(N)ew device ID\n\r(F)ind neighbors\r\n(C)reate record on neighbor\r\n(D)elete record on neighbor\r\n(R)etrieve record from neighbor\r\n(S)how local records\r\nR(e)set local storage\r\n\r\nSelection: ", groupID, nodeID, entryCount, DATABASE_SIZE);
 
 	// Get user input
-	state MENU_INPUT :
+	state MENU_INPUT:
 		ser_inf(MENU_INPUT, "%c", &c);
 
 	switch (c)
@@ -92,4 +104,54 @@ fsm root
 		case 'e': case 'E': proceed MENU; 		// todo
 		default: 			proceed MENU;
 	}
+
+	// ### DISCOVERY REQUEST PROTOCOL ####
+
+	// Reset neighbors + build payload
+	state DISCOVER_START:
+		discSendCount = 0;
+		neighborCount = 0;
+		//memset(neighbors, 0, sizeof(neighbors));
+
+		// Fill discovery request packet
+		discPayload = (struct discoveryMsg*)umalloc(sizeof(struct discoveryMsg));
+		discPayload->groupID = groupID;
+		discPayload->type = DIS_REQ;
+		discPayload->requestNum = (byte)(lrnd() % 256);
+		discPayload->senderID = nodeID;
+		discPayload->receiverID = 0;
+
+	// Fill packet with discovery payload
+	state DISCOVER_PACKET:
+		packet = tcv_wnp(DISCOVER_PACKET, sfd, PACKET_LEN);
+		packet[0] = NETWORK_ID;
+
+		struct discoveryMsg* discPtr = (struct discoveryMsg *)(packet+1);
+		*discPtr = *discPayload;
+
+	// Send discover request packet
+	state DISCOVER_SEND:
+		tcv_endp(packet);
+		discSendCount++;
+
+		// Wait 3 seconds
+		delay(3000 * MS, sending);
+		release;
+
+		// Send packet again if sent only once
+		if (discSendCount < 2) {
+			proceed DISCOVER_SEND;
+		}
+
+		// Free payload
+		ufree(discPayload);
+	
+	// Show how many neighbors were reached
+	state DISCOVER_REACHED:
+		ser_outf(DISCOVER_REACHED, "Reached %d nodes!", neighborCount);
+		proceed MENU;
+	
+
+	// ### END DISCOVERY REQUEST PROTOCOL END ###
+
 }
