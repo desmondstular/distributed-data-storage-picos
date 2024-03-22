@@ -27,6 +27,9 @@ byte neighborCount = 0;
 // Event variables
 byte sending = YES;
 
+// Discover protocol
+byte requestNum = 0;
+
 
 /*
  * Receiver fsm: Waits for packets from other
@@ -41,7 +44,6 @@ fsm receiver
 	// Packet Payloads
 	struct discoveryMsg *dReqPayload;
 
-
 	// Wait to receive packet
 	state WAIT_PKT:
 		packet = tcv_rnp(WAIT_PKT, sfd);
@@ -50,10 +52,10 @@ fsm receiver
 	state RECEIVED_PKT:
 		byte *type = (byte*)(packet+2);
 
-		//Check type of packet
+		// Check type of packet
 		switch (*type) {
 			case DIS_REQ: 	proceed DISCOVER_REQ_START;
-			case DIS_RES: 	proceed WAIT_PKT;	//todo
+			case DIS_RES: 	proceed DISCOVER_RES_START;
 			case NEW_REC: 	proceed WAIT_PKT;	//todo
 			case DEL_REC: 	proceed WAIT_PKT;	//todo
 			case RET_REC: 	proceed WAIT_PKT;	//todo
@@ -62,11 +64,11 @@ fsm receiver
 		}
 
 
-	// ### START | DISCOVER REQUEST PACKET | START ###
+	// ### START | DISCOVERY REQUEST PACKET | START ###
 
 	// Check packet payload, and build payload if in same group
 	state DISCOVER_REQ_START:
-		struct discoveryMsg *payload = (struct discoveryMsg*)(packet+2);
+		struct discoveryMsg *payload = (struct discoveryMsg*)(packet+1);
 
 		// If not in same group, end protocol
 		if (payload->groupID != groupID) {
@@ -97,7 +99,36 @@ fsm receiver
 		// End protocol
 		proceed WAIT_PKT;
 
-	// ### END | DISCOVER REQUEST PACKET | END ###
+	// ### END | DISCOVERY REQUEST PACKET | END ###
+
+
+	// ### START | DISCOVERY RESPONSE PACKET | START ###
+
+	// Check packet payload for same groupID and request number
+	state DISCOVER_RES_START:
+		struct discoveryMsg *payload = (struct discoveryMsg*)(packet+2);
+		byte recGroupID = payload->groupID;
+		byte recRequestNum = payload->requestNum;
+		byte senderID = payload->senderID;
+
+		// If not in same group or different request number, stop
+		if (recGroupID != groupID || recRequestNum != requestNum) {
+			proceed WAIT_PKT;
+		}
+
+		// If in neighbors array, end protocol
+		for (int i=0; i < neighborCount; i++) {
+			if (neighbors[i] == senderID) {
+				proceed WAIT_PKT;
+			}
+		}
+
+		// Add to neighbors array, end protocol
+		neighbors[neighborCount] = senderID;
+		neighborCount++;
+		proceed WAIT_PKT;
+
+	// ### END | DISCOVERY RESPONSE PACKET | END ###
 }
 
 /*
@@ -177,19 +208,25 @@ fsm root
 		struct discoveryMsg* discPtr = (struct discoveryMsg *)(packet+1);
 		*discPtr = *discPayload;
 
+		// Save request number
+		requestNum = discPayload->requestNum;
+
 	// Send discover request packet
 	state DISCOVER_SEND:
+		// Send packet and wait 3 seconds
 		tcv_endp(packet);
-		discSendCount++;
-
-		// Wait 3 seconds
 		delay(3000 * MS, sending);
 		release;
+
+		discSendCount++;
 
 		// Send packet again if sent only once
 		if (discSendCount < 2) {
 			proceed DISCOVER_SEND;
 		}
+
+		// Set request number to zero
+		requestNum = 0;
 
 		// Free payload
 		ufree(discPayload);
