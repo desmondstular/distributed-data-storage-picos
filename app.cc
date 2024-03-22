@@ -34,6 +34,7 @@ byte sending = YES;
 fsm receiver
 {
 	address packet;
+	byte* type;
 
 	// Wait to receive packet
 	state WAIT_PKT:
@@ -41,18 +42,23 @@ fsm receiver
 
 	// Received packet
 	state RECEIVED_PKT:
-		byte* type = (byte*)(packet+2);
+		type = (byte*)(packet+2);
 
 		// Check type of packet
-		switch (*type) {
-			case DIS_REQ: 	proceed WAIT_PKT;	//todo
-			case DIS_RES: 	proceed WAIT_PKT;	//todo
-			case NEW_REC: 	proceed WAIT_PKT;	//todo
-			case DEL_REC: 	proceed WAIT_PKT;	//todo
-			case RET_REC: 	proceed WAIT_PKT;	//todo
-			case RES_MSG: 	proceed WAIT_PKT;	//todo
-			default: 		proceed WAIT_PKT;
-		}
+		// switch (*type) {
+		// 	case DIS_REQ: 	proceed WAIT_PKT;	//todo
+		// 	case DIS_RES: 	proceed WAIT_PKT;	//todo
+		// 	case NEW_REC: 	proceed WAIT_PKT;	//todo
+		// 	case DEL_REC: 	proceed WAIT_PKT;	//todo
+		// 	case RET_REC: 	proceed WAIT_PKT;	//todo
+		// 	case RES_MSG: 	proceed WAIT_PKT;	//todo
+		// 	default: 		proceed WAIT_PKT;
+		// }
+
+	// Test a packet receive
+	state RECEIVE_TEST:
+		ser_outf(RECEIVE_TEST, "Received type: %u", type);
+		proceed WAIT_PKT;
 }
 
 /*
