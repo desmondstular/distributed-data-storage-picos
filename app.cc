@@ -59,6 +59,10 @@ fsm receiver
 	state RECEIVE_TEST:
 		ser_outf(RECEIVE_TEST, "Received type: %u", type);
 		proceed WAIT_PKT;
+
+	// ### DISCOVER REQUEST PACKET ###
+	state DISCOVER_REQ:
+
 }
 
 /*
@@ -76,19 +80,22 @@ fsm root
 	struct discoveryMsg *discPayload;
 
 	// Initialize node
-	state INIT_SESSION : phys_cc1350(0, PACKET_LEN);
+	state INIT_SESSION:
+		phys_cc1350(0, PACKET_LEN);
+		tcv_plug(0, &plug_null);
+		sfd = tcv_open(NONE, 0, 0);
 
-	tcv_plug(0, &plug_null);
-	sfd = tcv_open(NONE, 0, 0);
+		// If session did not open
+		if (sfd < 0)
+		{
+			diag("unable to open TCV session");
+			syserror(EASSERT, "no session");
+		}
 
-	// If session did not open
-	if (sfd < 0)
-	{
-		diag("unable to open TCV session");
-		syserror(EASSERT, "no session");
-	}
+		tcv_control(sfd, PHYSOPT_ON, NULL);
 
-	tcv_control(sfd, PHYSOPT_ON, NULL);
+		// Start receiver FSM
+		runfsm receiver;
 
 	// Show sender menu and get input
 	state MENU:
