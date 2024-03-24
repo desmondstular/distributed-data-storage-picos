@@ -35,6 +35,7 @@ fsm receiver
 {
 	address packet;
 	byte* type;
+	struct responseMsg *delRespPL;
 
 	// Wait to receive packet
 	state WAIT_PKT:
@@ -60,9 +61,77 @@ fsm receiver
 		ser_outf(RECEIVE_TEST, "Received type: %u", type);
 		proceed WAIT_PKT;
 
-	// ### DISCOVER REQUEST PACKET ###
-	state DISCOVER_REQ:
+	
+	// ### START | Delete Record Protocol | Start ###
 
+	state DELETE_REC_START:
+		struct delRecordMsg *delPtr = (struct delRecordMsg *)(packet+1);
+		
+		// drop packet if not same node ID or group ID
+		if (delPtr->receiverID != nodeID || delPtr->groupID != groupID) {
+			proceed WAIT_PKT;
+		}
+
+		// Initialize packet payload
+		delRespPL = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
+
+		//todo: check if entry in database. If empty send a no record found
+		if (true) {
+			delRespPL->groupID = groupID;
+			delRespPL->type = delPtr->type;
+			delRespPL->requestNumber = delPtr->requestNumber;
+			delRespPL->senderID = nodeID;
+			delRespPL->receiverID = delPtr->senderID;
+			delRespPL->status =  DELETE_FAIL;
+		}
+
+		//todo: delete requested entry
+		if (true) {
+			delRespPL->groupID = groupID;
+			delRespPL->type = delPtr->type;
+			delRespPL->requestNumber = delPtr->requestNumber;
+			delRespPL->senderID = nodeID;
+			delRespPL->receiverID = delPtr->senderID;
+			delRespPL->status =  DELETE_FAIL;
+		}
+
+	// Create packet
+	state DELETE_REC_PACKET:
+		packet = tcv_wnp(DELETE_REC_PACKET, sfd, PACKET_LEN);
+		packet[0] = NETWORK_ID;
+
+	// Add payload, send packet, end protocol
+	state DELETE_REC_SEND:
+		struct responseMsg *ptr = (struct responseMsg *)(packet+1);
+		*ptr = *delRespPL;
+		tcv_endp(packet);
+		ufree(delRespPL);
+		proceed WAIT_PKT;
+
+	// ### END | DELETE RECORD PROTOCOL | END ###
+
+	
+	// ### START | DELETE RECORD RESPONSE | START ###
+
+	state DELETE_RESP_START:
+		struct delRecordMsg *delPtr = (struct delRecordMsg *)(packet+1);
+
+		// drop packet if not same node ID or group ID
+		if (delPtr->receiverID != nodeID || delPtr->groupID != groupID) {
+			proceed WAIT_PKT;
+		}
+
+		// drop if not awaiting response, or different request number
+		if (waitingDelete != YES || delPtr->requestNumber != requestNumber) {
+			proceed WAIT_PKT;
+		}
+
+		// change global variables for root fsm notification
+		response = YES;
+		delResponseStatus = delPtr->status
+
+		// End of protocol
+		proceed WAIT_PKT;
 }
 
 /*
