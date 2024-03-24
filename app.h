@@ -88,7 +88,6 @@ struct delRecordMsg
 	byte requestNumber;
 	byte senderID;
 	byte receiverID;
-	char record[RECORD_SIZE];
 	byte recordIndex;
 	byte padding; // not used
 };

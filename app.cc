@@ -167,4 +167,88 @@ fsm root
 
 	// ### END DISCOVERY REQUEST PROTOCOL END ###
 
+
+	// ### START | DELETE ENTRY PROTOCOL | START ###
+	byte destID;
+	byte deleteIndex;
+	struct delRecordMsg *delRecPl;
+
+	// Delete protocol start; ask for destination ID
+	state DELETE_START:
+		ser_out(DELETE_START, "Enter destination ID: ");
+	
+	// Get destination ID
+	state DELETE_GET_DEST:
+		ser_inf(DELETE_GET_DEST, "%u", &destID);
+	
+	// Ask for index of entry to delete
+	state DELETE_ASK_INDEX:
+		ser_out(DELETE_ASK_INDEX, "Enter entry index: ");
+
+	// Get index of entry to delete
+	state DELETE_GET_INDEX:
+		ser_inf(DELETE_GET_INDEX, "%u", &deleteIndex);
+	
+	// Build payload 
+	state DELETE_PAYLOAD:
+		delRecPL = (struct delRecordMsg*)umalloc(sizeof(struct delRecordMsg));
+		requestNumber = (byte)(rnd() % 256);
+		delRecPl->groupID = groupID;
+		delRecPl->type = DEL_REC;
+		delRecPl->requestNumber = requestNumber;
+		delRecPl->senderID = nodeID;
+		delRecPl->receiverID = destID;
+		delRecPl->recordIndex = deleteIndex;
+
+	// Fill packet with payload and send
+	state DELETE_PACKET:
+		packet = tcv_wnp(DELETE_PACKET, sfd, PACKET_LEN);
+		packet[0] = NETWORK_ID;
+
+		struct delRecordMsg* delPtr = (struct delRecordMsg *)(packet+1);
+		*delPtr = *delRecPl;
+
+	// Send packet to and check response
+	state DELETE_SEND:
+		tcv_endp(packet);
+
+		// Wait 3 seconds
+		delay(3000 * MS, sending);
+		release;
+
+		// Free payload
+		ufree(discPayload);
+
+		// If received no response
+		if (response == NO) {
+			proceed DELETE_NO_RESPONSE;
+		}
+
+		// If response success, proceed to success state
+		if (delResponseStatus == SUCCESS) {
+			proceed DELETE_RESPONSE_SUCCESS;
+		}
+
+		// If delete failed, proceed to response fail state
+		else {
+			proceed DELETE_RESPONSE_FAIL;
+		}
+
+	// Failed to delete as there was no response
+	state DELETE_NO_RESPONSE:
+		ser_out(DELETE_NO_RESPONSE, "\r\nFailed to reach the destination");
+		proceed MENU;
+
+	// Delete was successful
+	state DELETE_RESPONSE_SUCCESS:
+		ser_out(DELETE_RESPONSE_SUCCESS, "\r\nRecord Deleted");
+		response = NO;
+		proceed MENU;
+
+	// Delete failed as the record did not exist
+	state DELETE_RESPONSE_FAIL:
+		ser_out(DELETE_RESPONSE_FAIL, "\r\nThe record does not exist on node %u", destNode);
+		response = NO;
+		proceed MENU;
+
 }
