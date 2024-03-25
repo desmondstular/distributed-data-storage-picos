@@ -13,7 +13,7 @@
 int sfd;
 
 // Node and group ID
-byte groupID = 1;
+byte groupID = 2;
 byte nodeID = 1;
 
 // Database and current size
@@ -85,7 +85,7 @@ fsm receiver
 	
 	// Create packet and send, then end protocol
 	state DISCOVER_REQ_SEND:
-		packet = tcv_wnp(DISCOVER_REQ_SEND, sfd, PACKET_LEN);
+		packet = tcv_wnp(DISCOVER_REQ_SEND, sfd, DIS_PACK_LEN);
 		packet[0] = NETWORK_ID;
 
 		// Add payload to packet
@@ -106,7 +106,7 @@ fsm receiver
 
 	// Check packet payload for same groupID and request number
 	state DISCOVER_RES_START:
-		struct discoveryMsg *payload = (struct discoveryMsg*)(packet+2);
+		struct discoveryMsg *payload = (struct discoveryMsg*)(packet+1);
 		byte recGroupID = payload->groupID;
 		byte recRequestNum = payload->requestNum;
 		byte senderID = payload->senderID;
@@ -147,7 +147,7 @@ fsm root
 
 	// Initialize node
 	state INIT_SESSION:
-		phys_cc1350(0, PACKET_LEN);
+		phys_cc1350(0, CC1350_BUF_SZ);
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
 
@@ -173,11 +173,11 @@ fsm root
 
 	switch (c)
 	{
-		case 'd': case 'D': proceed DISCOVER_START;
 		case 'g': case 'G': proceed MENU; 		// todo
 		case 'n': case 'N': proceed MENU; 		// todo
-		case 'f': case 'F': proceed MENU; 		// todo
+		case 'f': case 'F': proceed DISCOVER_START;
 		case 'c': case 'C': proceed MENU; 		// todo
+		case 'd': case 'D': proceed MENU;		// todo
 		case 'r': case 'R': proceed MENU; 		// todo
 		case 's': case 'S': proceed MENU; 		// todo
 		case 'e': case 'E': proceed MENU; 		// todo
@@ -202,7 +202,7 @@ fsm root
 
 	// Fill packet with discovery payload
 	state DISCOVER_PACKET:
-		packet = tcv_wnp(DISCOVER_PACKET, sfd, PACKET_LEN);
+		packet = tcv_wnp(DISCOVER_PACKET, sfd, DIS_PACK_LEN);
 		packet[0] = NETWORK_ID;
 
 		struct discoveryMsg* discPtr = (struct discoveryMsg *)(packet+1);
@@ -215,25 +215,36 @@ fsm root
 	state DISCOVER_SEND:
 		// Send packet and wait 3 seconds
 		tcv_endp(packet);
-		delay(3000 * MS, sending);
+		delay(3000 * MS, DISCOVER_LOOP);
 		release;
-
+	
+	state DISCOVER_LOOP:
 		discSendCount++;
 
-		// Send packet again if sent only once
+		// Send packet twice
 		if (discSendCount < 2) {
-			proceed DISCOVER_SEND;
+			proceed DISCOVER_PACKET;
 		}
-
-		// Set request number to zero
-		requestNum = 0;
 
 		// Free payload
 		ufree(discPayload);
 	
-	// Show how many neighbors were reached
+	// Show how many and which neighbors were reached
 	state DISCOVER_REACHED:
-		ser_outf(DISCOVER_REACHED, "Reached %d nodes!", neighborCount);
+		char reached[50];
+
+		// Build string of neighbors to show node user
+		for (int i=0; i < neighborCount; i++) {
+			form(reached, "#%u ", neighbors[i]);
+		}
+
+		// Shows neighbor nodes if found more than zero
+		if (neighborCount != 0) {
+			ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\rNeighbors: %s\n\r", neighborCount, reached);
+		}
+		else {
+			ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\r", neighborCount, reached);
+		}
 		proceed MENU;
 	
 

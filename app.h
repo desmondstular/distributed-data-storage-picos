@@ -25,10 +25,13 @@
 #define NETWORK_ID 0
 
 // Maximum sizes
-#define RECORD_SIZE 20
-#define DATABASE_SIZE 40
-#define MAX_NEIGHBORS 25
-#define PACKET_LEN 250
+#define RECORD_SIZE 	20
+#define DATABASE_SIZE 	40
+#define MAX_NEIGHBORS 	25
+#define CC1350_BUF_SZ 	250
+
+// Packet Lengths (header(2) + payload + trailer(2))
+#define DIS_PACK_LEN 	10
 
 // Message Types
 #define DIS_REQ 0x00
