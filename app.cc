@@ -45,6 +45,7 @@ fsm receiver
     // Packet Payloads
     struct discoveryMsg *dReqPayload;
     struct responseMsg *createRESMSG;
+    struct responseMsg *delRespPL;
     
     byte requestNumberTracker = 0;
     char createResponseSwitch;
@@ -213,7 +214,77 @@ fsm receiver
   		ser_out(RESPONSE_START, "\r\nNode Full");
   	}
   	proceed WAIT_PKT;
-  	
+    
+    // ### START | Delete Record Protocol | Start ###
+
+	state DELETE_REC_START:
+		struct delRecordMsg *delPtr = (struct delRecordMsg *)(packet+1);
+		
+		// drop packet if not same node ID or group ID
+		if (delPtr->receiverID != nodeID || delPtr->groupID != groupID) {
+			proceed WAIT_PKT;
+		}
+
+		// Initialize packet payload
+		delRespPL = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
+
+		//todo: check if entry in database. If empty send a no record found
+		if (true) {
+			delRespPL->groupID = groupID;
+			delRespPL->type = delPtr->type;
+			delRespPL->requestNumber = delPtr->requestNumber;
+			delRespPL->senderID = nodeID;
+			delRespPL->receiverID = delPtr->senderID;
+			delRespPL->status =  DELETE_FAIL;
+		}
+
+		//todo: delete requested entry
+		if (true) {
+			delRespPL->groupID = groupID;
+			delRespPL->type = delPtr->type;
+			delRespPL->requestNumber = delPtr->requestNumber;
+			delRespPL->senderID = nodeID;
+			delRespPL->receiverID = delPtr->senderID;
+			delRespPL->status =  DELETE_FAIL;
+		}
+
+	// Create packet
+	state DELETE_REC_PACKET:
+		packet = tcv_wnp(DELETE_REC_PACKET, sfd, PACKET_LEN);
+		packet[0] = NETWORK_ID;
+
+	// Add payload, send packet, end protocol
+	state DELETE_REC_SEND:
+		struct responseMsg *ptr = (struct responseMsg *)(packet+1);
+		*ptr = *delRespPL;
+		tcv_endp(packet);
+		ufree(delRespPL);
+		proceed WAIT_PKT;
+
+	// ### END | DELETE RECORD PROTOCOL | END ###
+
+	
+	// ### START | DELETE RECORD RESPONSE | START ###
+
+	state DELETE_RESP_START:
+		struct delRecordMsg *delPtr = (struct delRecordMsg *)(packet+1);
+
+		// drop packet if not same node ID or group ID
+		if (delPtr->receiverID != nodeID || delPtr->groupID != groupID) {
+			proceed WAIT_PKT;
+		}
+
+		// drop if not awaiting response, or different request number
+		if (waitingDelete != YES || delPtr->requestNumber != requestNumber) {
+			proceed WAIT_PKT;
+		}
+
+		// change global variables for root fsm notification
+		response = YES;
+		delResponseStatus = delPtr->status
+
+		// End of protocol
+		proceed WAIT_PKT;
 }
 
 /*
@@ -424,8 +495,87 @@ fsm root
 
     // ### END DISCOVERY REQUEST PROTOCOL END ###
 
+// ### START | DELETE ENTRY PROTOCOL | START ###
+	byte destID;
+	byte deleteIndex;
+	struct delRecordMsg *delRecPl;
+
+	// Delete protocol start; ask for destination ID
+	state DELETE_START:
+		ser_out(DELETE_START, "Enter destination ID: ");
+	
+	// Get destination ID
+	state DELETE_GET_DEST:
+		ser_inf(DELETE_GET_DEST, "%u", &destID);
+	
+	// Ask for index of entry to delete
+	state DELETE_ASK_INDEX:
+		ser_out(DELETE_ASK_INDEX, "Enter entry index: ");
+
+	// Get index of entry to delete
+	state DELETE_GET_INDEX:
+		ser_inf(DELETE_GET_INDEX, "%u", &deleteIndex);
+	
+	// Build payload 
+	state DELETE_PAYLOAD:
+		delRecPL = (struct delRecordMsg*)umalloc(sizeof(struct delRecordMsg));
+		requestNumber = (byte)(rnd() % 256);
+		delRecPl->groupID = groupID;
+		delRecPl->type = DEL_REC;
+		delRecPl->requestNumber = requestNumber;
+		delRecPl->senderID = nodeID;
+		delRecPl->receiverID = destID;
+		delRecPl->recordIndex = deleteIndex;
+
+	// Fill packet with payload and send
+	state DELETE_PACKET:
+		packet = tcv_wnp(DELETE_PACKET, sfd, PACKET_LEN);
+		packet[0] = NETWORK_ID;
+
+		struct delRecordMsg* delPtr = (struct delRecordMsg *)(packet+1);
+		*delPtr = *delRecPl;
+
+	// Send packet to and check response
+	state DELETE_SEND:
+		tcv_endp(packet);
+
+		// Wait 3 seconds
+		delay(3000 * MS, sending);
+		release;
+
+		// Free payload
+		ufree(discPayload);
+
+		// If received no response
+		if (response == NO) {
+			proceed DELETE_NO_RESPONSE;
+		}
+
+		// If response success, proceed to success state
+		if (delResponseStatus == SUCCESS) {
+			proceed DELETE_RESPONSE_SUCCESS;
+		}
+
+		// If delete failed, proceed to response fail state
+		else {
+			proceed DELETE_RESPONSE_FAIL;
+		}
+
+	// Failed to delete as there was no response
+	state DELETE_NO_RESPONSE:
+		ser_out(DELETE_NO_RESPONSE, "\r\nFailed to reach the destination");
+		proceed MENU;
+
+	// Delete was successful
+	state DELETE_RESPONSE_SUCCESS:
+		ser_out(DELETE_RESPONSE_SUCCESS, "\r\nRecord Deleted");
+		response = NO;
+		proceed MENU;
+
+	// Delete failed as the record did not exist
+	state DELETE_RESPONSE_FAIL:
+		ser_out(DELETE_RESPONSE_FAIL, "\r\nThe record does not exist on node %u", destNode);
+		response = NO;
+		proceed MENU;
+
 }
-
-
-
-
