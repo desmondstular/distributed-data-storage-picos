@@ -46,6 +46,9 @@ void deleteEntry (int index) {
 	// Assign empty struct to last database entry
 	struct dbEntry temp;
 	DB[i] = temp;
+
+	// Remove one from count
+	entryCount --;
 }
 
 
@@ -366,10 +369,10 @@ fsm root
    	 case 'n': case 'N': proceed NEW_NODEID_OUT;    	 
    	 case 'f': case 'F': proceed DISCOVER_START;
    	 case 'c': case 'C': proceed CREATE_START;    	 
-   	 case 'd': case 'D': proceed MENU;   	 // todo
+   	 case 'd': case 'D': proceed DELETE_START;
    	 case 'r': case 'R': proceed MENU;    	 // todo
-   	 case 's': case 'S': proceed MENU;    	 // todo
-   	 case 'e': case 'E': proceed MENU;    	 // todo
+   	 case 's': case 'S': proceed DISPLAY_START;
+   	 case 'e': case 'E': proceed RESET_START;
    	 default:    		 proceed MENU;
     }
     // change groupID protocol
@@ -402,18 +405,18 @@ fsm root
     
     state CREATE_START:
     
-   	 //initaized create payload
-   	 createSendCount = 0;
-   	 createPayload = (struct newRecordMsg*)umalloc(sizeof(struct newRecordMsg));
-   	 createPayload->groupID = groupID;
-   	 createPayload->type = NEW_REC;
-   	 createPayload->requestNumber = (byte)(lrnd() % 256);
-   	 createPayload->senderID = nodeID;
-   	 createPayload->receiverID = 0;
+		//initaized create payload
+		createSendCount = 0;
+		createPayload = (struct newRecordMsg*)umalloc(sizeof(struct newRecordMsg));
+		createPayload->groupID = groupID;
+		createPayload->type = NEW_REC;
+		createPayload->requestNumber = (byte)(lrnd() % 256);
+		createPayload->senderID = nodeID;
+		createPayload->receiverID = 0;
    	 
    	 
     state CREATE_RECEIVERID_OUT:
-   	 ser_out(CREATE_RECEIVERID_OUT, "\r\nEnter the destination ID (0-25)");
+		ser_out(CREATE_RECEIVERID_OUT, "\r\nEnter the destination ID (0-25)");
    	 
     state CREATE_RECEIVERID_IN:
     	int temp = 0;
@@ -421,10 +424,10 @@ fsm root
     	createPayload->receiverID = temp;
     	
     state CREATE_GETMESSAGE_OUT:
-   	 ser_out(CREATE_GETMESSAGE_OUT, "\r\nWhat is the message you want to send (maximum 20 characters)");
+		ser_out(CREATE_GETMESSAGE_OUT, "\r\nWhat is the message you want to send (maximum 20 characters)");
     state CREATE_GETMESSAGE_IN:
-   	 char recordTemp[RECORD_SIZE];
-   	 ser_inf(CREATE_GETMESSAGE_IN, "%c", &recordTemp);
+		char recordTemp[RECORD_SIZE];
+		ser_inf(CREATE_GETMESSAGE_IN, "%c", &recordTemp);
    	 
    	 for(int i =0; i <RECORD_SIZE; i++)
    	 {
@@ -434,98 +437,98 @@ fsm root
    	 
    	 
     state CREATE_PACKET:
-   	packet = tcv_wnp(CREATE_PACKET, sfd, CREATE_PACK_LEN);
-   	packet[0] = NETWORK_ID;
-   	 
-   	//cast create payload as a packet
-   	struct newRecordMsg* recordPtr = (struct newRecordMsg *)(packet+1);
-   	*recordPtr = *createPayload;
-   	 
-    state CREATE_SEND:
-   	tcv_endp(packet);
-   	delay(3000 * MS, CREATE_LOOP);
-   	release;
+		packet = tcv_wnp(CREATE_PACKET, sfd, CREATE_PACK_LEN);
+		packet[0] = NETWORK_ID;
+		
+		//cast create payload as a packet
+		struct newRecordMsg* recordPtr = (struct newRecordMsg *)(packet+1);
+		*recordPtr = *createPayload;
+		
+		state CREATE_SEND:
+		tcv_endp(packet);
+		delay(3000 * MS, CREATE_LOOP);
+		release;
    	
    state CREATE_LOOP:
-   	createSendCount++;
+		createSendCount++;
 
-   	 // Send packet twice
-   	if (createSendCount < 2) {
-   		proceed CREATE_PACKET;
-   	}
-  
-   	
-   	ufree(createPayload);
-   	proceed MENU;
+		// Send packet twice
+		if (createSendCount < 2) {
+			proceed CREATE_PACKET;
+		}
+	
+		
+		ufree(createPayload);
+		proceed MENU;
     // ### END CREATE PROTCOL ###
     // ### DISCOVERY REQUEST PROTOCOL ####
 
     // Reset neighbors + build payload
     state DISCOVER_START:
-   	 discSendCount = 0;
-   	 neighborCount = 0;
-   	 //memset(neighbors, 0, sizeof(neighbors));
+		discSendCount = 0;
+		neighborCount = 0;
+		//memset(neighbors, 0, sizeof(neighbors));
 
-   	 // Fill discovery request packet
-   	 discPayload = (struct discoveryMsg*)umalloc(sizeof(struct discoveryMsg));
-   	 discPayload->groupID = groupID;
-   	 discPayload->type = DIS_REQ;
-   	 discPayload->requestNum = (byte)(lrnd() % 256);
-   	 discPayload->senderID = nodeID;
-   	 discPayload->receiverID = 0;
+		// Fill discovery request packet
+		discPayload = (struct discoveryMsg*)umalloc(sizeof(struct discoveryMsg));
+		discPayload->groupID = groupID;
+		discPayload->type = DIS_REQ;
+		discPayload->requestNum = (byte)(lrnd() % 256);
+		discPayload->senderID = nodeID;
+		discPayload->receiverID = 0;
 
     // Fill packet with discovery payload
     state DISCOVER_PACKET:
-   	 packet = tcv_wnp(DISCOVER_PACKET, sfd, DIS_PACK_LEN);
-   	 packet[0] = NETWORK_ID;
+		packet = tcv_wnp(DISCOVER_PACKET, sfd, DIS_PACK_LEN);
+		packet[0] = NETWORK_ID;
 
-   	 struct discoveryMsg* discPtr = (struct discoveryMsg *)(packet+1);
-   	 *discPtr = *discPayload;
+		struct discoveryMsg* discPtr = (struct discoveryMsg *)(packet+1);
+		*discPtr = *discPayload;
 
-   	 // Save request number
-   	 requestNum = discPayload->requestNum;
+		// Save request number
+		requestNum = discPayload->requestNum;
 
-    // Send discover request packet
-    state DISCOVER_SEND:
-   	 // Send packet and wait 3 seconds
-   	 tcv_endp(packet);
-   	 delay(3000 * MS, DISCOVER_LOOP);
-   	 release;
+	// Send discover request packet
+	state DISCOVER_SEND:
+		// Send packet and wait 3 seconds
+		tcv_endp(packet);
+		delay(3000 * MS, DISCOVER_LOOP);
+		release;
     
     state DISCOVER_LOOP:
-   	 discSendCount++;
+		discSendCount++;
 
-   	 // Send packet twice
-   	 if (discSendCount < 2) {
-   		 proceed DISCOVER_PACKET;
-   	 }
+		// Send packet twice
+		if (discSendCount < 2) {
+			proceed DISCOVER_PACKET;
+		}
 
-   	 // Free payload
-   	 ufree(discPayload);
-    
-    // Show how many and which neighbors were reached
-    state DISCOVER_REACHED:
-   	 char reached[50];
+		// Free payload
+		ufree(discPayload);
+		
+		// Show how many and which neighbors were reached
+		state DISCOVER_REACHED:
+		char reached[50];
 
-   	 // Build string of neighbors to show node user
-   	 for (int i=0; i < neighborCount; i++) {
-   		 form(reached, "#%u ", neighbors[i]);
-   	 }
+		// Build string of neighbors to show node user
+		for (int i=0; i < neighborCount; i++) {
+			form(reached, "#%u ", neighbors[i]);
+		}
 
-   	 // Shows neighbor nodes if found more than zero
-   	 if (neighborCount != 0) {
-   		 ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\rNeighbors: %s\n\r", neighborCount, reached);
-   	 }
-   	 else {
-   		 ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\r", neighborCount, reached);
-   	 }
-   	 proceed MENU;
-    
+		// Shows neighbor nodes if found more than zero
+		if (neighborCount != 0) {
+			ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\rNeighbors: %s\n\r", neighborCount, reached);
+		}
+		else {
+			ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\r", neighborCount, reached);
+		}
+		proceed MENU;
+		
 
     // ### END DISCOVERY REQUEST PROTOCOL END ###
 
 
-// ### START | DELETE ENTRY PROTOCOL | START ###
+	// ### START | DELETE ENTRY PROTOCOL | START ###
 
 	// Delete protocol start; ask for destination ID
 	state DELETE_START:
@@ -620,10 +623,11 @@ fsm root
 	
 	// Displays entry at current index
 	state DISPLAY_ENTRY:
+		char record[RECORD_SIZE];
 		struct dbEntry *ptr = &DB[currentIndex];
 		word index = ptr->ownerID;
 		lword timeStamp = ptr->timeStamp;
-		strcpy(char record[RECORD_SIZE], ptr->record);
+		strcpy(record, ptr->record);
 
 		// Display entry
 		ser_outf(DISPLAY_ENTRY, "\r\n%-8u%-12u%-12u%s", index, timeStamp, index, record);
@@ -646,6 +650,11 @@ fsm root
 
 	// START: Clear database entries stored on node
 	state RESET_START:
+		struct dbEntry empty;
+		for (int i=0; i < DATABASE_SIZE; i++) {
+			DB[i] = empty;
+		}
+		entryCount = 0;
 		proceed MENU;
 
 	// ### END | RESET STORAGE | END ###
