@@ -2,9 +2,9 @@
  * app.h
  *
  * Authors: Ben Nourse
- *			Desmond Stular (3067040)
+ *   		 Desmond Stular (3067040)
  *
- * 	  Date: March 19, 2024
+ *       Date: March 19, 2024
  */
 
 #ifndef APP_H_
@@ -25,10 +25,15 @@
 #define NETWORK_ID 0
 
 // Maximum sizes
-#define RECORD_SIZE 20
-#define DATABASE_SIZE 40
-#define MAX_NEIGHBORS 25
-#define PACKET_LEN 250
+#define RECORD_SIZE     20
+#define DATABASE_SIZE     40
+#define MAX_NEIGHBORS     25
+#define CC1350_BUF_SZ     250
+
+// Packet Lengths (header(2) + payload + trailer(2))
+#define DIS_PACK_LEN     10
+#define CREATE_PACK_LEN     30
+#define CREATE_RESPACK_LEN	32
 
 // Message Types
 #define DIS_REQ 0x00
@@ -45,7 +50,6 @@
 #define NO_ENTRY 0x04
 
 
-
 /*** Message structures ***/
 
 /*
@@ -56,11 +60,11 @@
  */
 struct discoveryMsg
 {
-	word groupID;
-	byte type;
-	byte requestNum;
-	byte senderID;
-	byte receiverID;
+    word groupID;
+    byte type;
+    byte requestNum;
+    byte senderID;
+    byte receiverID;
 };
 
 /*
@@ -69,12 +73,12 @@ struct discoveryMsg
  */
 struct newRecordMsg
 {
-	word groupID;
-	byte type;
-	byte requestNumber;
-	byte senderID;
-	byte receiverID;
-	char record[RECORD_SIZE];
+    word groupID;
+    byte type;
+    byte requestNumber;
+    byte senderID;
+    byte receiverID;
+    char record[RECORD_SIZE];
 };
 
 /*
@@ -98,14 +102,14 @@ struct delRecordMsg
  */
 struct retRecordMsg
 {
-	word groupID;
-	byte type;
-	byte requestNumber;
-	byte senderID;
-	byte receiverID;
-	char record[RECORD_SIZE];
-	byte recordIndex;
-	byte padding; // not used
+    word groupID;
+    byte type;
+    byte requestNumber;
+    byte senderID;
+    byte receiverID;
+    char record[RECORD_SIZE];
+    byte recordIndex;
+    byte padding; // not used
 };
 
 /*
@@ -116,25 +120,30 @@ struct retRecordMsg
  */
 struct responseMsg
 {
-	word groupID;
-	byte type;
-	byte requestNumber;
-	byte senderID;
-	byte receiverID;
-	byte status;
-	byte padding;
-	char record[RECORD_SIZE];
+    word groupID;
+    byte type;
+    byte requestNumber;
+    byte senderID;
+    byte receiverID;
+    byte status;
+    byte padding;
+    char record[RECORD_SIZE];
 };
 
 /*
- * The Database struct
+ * The Database entry struct
  * contains ownerID timeStamp and string message
  */
 struct dbEntry
 {
-	word ownerID;
-	lword timeStamp;
-	char record[RECORD_SIZE];
+    word ownerID;
+    lword timeStamp;
+    char record[RECORD_SIZE];
 };
 
+
 #endif
+
+
+
+
