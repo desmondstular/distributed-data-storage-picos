@@ -330,6 +330,9 @@ fsm root
 	byte destID;
 	byte deleteIndex;
 	struct delRecordMsg *delRecPl;
+
+	// Display DB Entries Variables
+	int currentIndex = 0;
     
     // Initialize node
     state INIT_SESSION:
@@ -602,4 +605,48 @@ fsm root
 		response = NO;
 		proceed MENU;
 
+	// ### END | DELETE ENTRY PROTOCOL | END ###
+
+
+	// ### START | DISPLAY DATABASE | START ###
+	struct dbEntry DB[DATABASE_SIZE];
+	byte entryCount = 0;
+	int currentIndex = 0;
+
+	// START: Display all entries in the nodes db
+	state DISPLAY_START:
+		// display table header
+		ser_out(DISPLAY_START, "\r\nIndex\tTimestamp\tOwner ID\tRecord Data");
+	
+	// Displays entry at current index
+	state DISPLAY_ENTRY:
+		struct dbEntry *ptr = &DB[currentIndex];
+		word index = ptr->ownerID;
+		lword timeStamp = ptr->timeStamp;
+		strcpy(char record[RECORD_SIZE], ptr->record);
+
+		// Display entry
+		ser_outf(DISPLAY_ENTRY, "\r\n%-8u%-12u%-12u%s", index, timeStamp, index, record);
+
+	// Check if more entries, if not end
+	state DISPLAY_END:
+		currentIndex++;
+
+		// If still more entries, keep displaying
+		if (currentIndex < entryCount) {
+			proceed DISPLAY_ENTRY;
+		}
+		currentIndex = 0;
+		proceed MENU;
+
+	// ### END | DISPLAY DATABASE | END ###
+
+
+	// ### START | RESET STORAGE | START ###
+
+	// START: Clear database entries stored on node
+	state RESET_START:
+		proceed MENU;
+
+	// ### END | RESET STORAGE | END ###
 }
