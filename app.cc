@@ -26,10 +26,27 @@ byte neighborCount = 0;
 
 // Event variables
 byte sending = YES;
+byte response = NO;
 
-// Discover protocol
+// Root and receiver communication
 byte requestNum = 0;
+byte delResponseStatus;
 
+/*
+ * Deletes a database entry by shifting entries
+ * over if their is a hole from deletion.
+*/
+void deleteEntry (int index) {
+	int i;
+	// Shift over each struct till last index
+	for (i = index; i < entryCount-1; i++) {
+		DB[i] = DB[i+1];
+	}
+
+	// Assign empty struct to last database entry
+	struct dbEntry temp;
+	DB[i] = temp;
+}
 
 
 /*
@@ -228,8 +245,8 @@ fsm receiver
 		// Initialize packet payload
 		delRespPL = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
 
-		//todo: check if entry in database. If empty send a no record found
-		if (true) {
+		//check if entry in database. If not, build payload for fail
+		if (delPtr->recordIndex > (entryCount-1)) {
 			delRespPL->groupID = groupID;
 			delRespPL->type = delPtr->type;
 			delRespPL->requestNumber = delPtr->requestNumber;
@@ -238,19 +255,23 @@ fsm receiver
 			delRespPL->status =  DELETE_FAIL;
 		}
 
-		//todo: delete requested entry
-		if (true) {
+		// Delete entry, then 
+		else {
+			// Delete entry at index
+			deleteEntry(delPtr->recordIndex);
+
+			// Build response payload
 			delRespPL->groupID = groupID;
 			delRespPL->type = delPtr->type;
 			delRespPL->requestNumber = delPtr->requestNumber;
 			delRespPL->senderID = nodeID;
 			delRespPL->receiverID = delPtr->senderID;
-			delRespPL->status =  DELETE_FAIL;
+			delRespPL->status =  SUCCESS;
 		}
 
 	// Create packet
 	state DELETE_REC_PACKET:
-		packet = tcv_wnp(DELETE_REC_PACKET, sfd, PACKET_LEN);
+		packet = tcv_wnp(DELETE_REC_PACKET, sfd, RESPONSE_PACK_LEN);
 		packet[0] = NETWORK_ID;
 
 	// Add payload, send packet, end protocol
@@ -267,7 +288,7 @@ fsm receiver
 	// ### START | DELETE RECORD RESPONSE | START ###
 
 	state DELETE_RESP_START:
-		struct delRecordMsg *delPtr = (struct delRecordMsg *)(packet+1);
+		struct responseMsg *delPtr = (struct responseMsg *)(packet+1);
 
 		// drop packet if not same node ID or group ID
 		if (delPtr->receiverID != nodeID || delPtr->groupID != groupID) {
@@ -275,13 +296,13 @@ fsm receiver
 		}
 
 		// drop if not awaiting response, or different request number
-		if (waitingDelete != YES || delPtr->requestNumber != requestNumber) {
+		if (delPtr->requestNumber != requestNum) {
 			proceed WAIT_PKT;
 		}
 
 		// change global variables for root fsm notification
 		response = YES;
-		delResponseStatus = delPtr->status
+		delResponseStatus = delPtr->status;
 
 		// End of protocol
 		proceed WAIT_PKT;
@@ -301,9 +322,14 @@ fsm root
     int discSendCount;
     struct discoveryMsg *discPayload;
     
-    //create protocol variables
+    // create protocol variables
     struct newRecordMsg *createPayload;
     int createSendCount = 0;
+
+	// Delete Protocol Variables
+	byte destID;
+	byte deleteIndex;
+	struct delRecordMsg *delRecPl;
     
     // Initialize node
     state INIT_SESSION:
@@ -495,10 +521,8 @@ fsm root
 
     // ### END DISCOVERY REQUEST PROTOCOL END ###
 
+
 // ### START | DELETE ENTRY PROTOCOL | START ###
-	byte destID;
-	byte deleteIndex;
-	struct delRecordMsg *delRecPl;
 
 	// Delete protocol start; ask for destination ID
 	state DELETE_START:
@@ -518,18 +542,18 @@ fsm root
 	
 	// Build payload 
 	state DELETE_PAYLOAD:
-		delRecPL = (struct delRecordMsg*)umalloc(sizeof(struct delRecordMsg));
-		requestNumber = (byte)(rnd() % 256);
+		delRecPl = (struct delRecordMsg*)umalloc(sizeof(struct delRecordMsg));
+		requestNum = (byte)(rnd() % 256);
 		delRecPl->groupID = groupID;
 		delRecPl->type = DEL_REC;
-		delRecPl->requestNumber = requestNumber;
+		delRecPl->requestNumber = requestNum;
 		delRecPl->senderID = nodeID;
 		delRecPl->receiverID = destID;
 		delRecPl->recordIndex = deleteIndex;
 
 	// Fill packet with payload and send
 	state DELETE_PACKET:
-		packet = tcv_wnp(DELETE_PACKET, sfd, PACKET_LEN);
+		packet = tcv_wnp(DELETE_PACKET, sfd, DELETE_PACK_LEN);
 		packet[0] = NETWORK_ID;
 
 		struct delRecordMsg* delPtr = (struct delRecordMsg *)(packet+1);
@@ -574,7 +598,7 @@ fsm root
 
 	// Delete failed as the record did not exist
 	state DELETE_RESPONSE_FAIL:
-		ser_out(DELETE_RESPONSE_FAIL, "\r\nThe record does not exist on node %u", destNode);
+		ser_outf(DELETE_RESPONSE_FAIL, "\r\nThe record does not exist on node %u", destID);
 		response = NO;
 		proceed MENU;
 

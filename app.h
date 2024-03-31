@@ -31,9 +31,11 @@
 #define CC1350_BUF_SZ     250
 
 // Packet Lengths (header(2) + payload + trailer(2))
-#define DIS_PACK_LEN     10
+#define DIS_PACK_LEN        10
 #define CREATE_PACK_LEN     30
 #define CREATE_RESPACK_LEN	32
+#define RESPONSE_PACK_LEN 10
+#define DELETE_PACK_LEN   10
 
 // Message Types
 #define DIS_REQ 0x00
