@@ -172,13 +172,7 @@ fsm receiver
 		//payload
 		struct newRecordMsg* createRECPayload = (struct newRecordMsg *)(packet+1);
 		
-		// create response message for create
-		createRESMSG = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
-		createRESMSG->groupID = createRECPayload->groupID;
-		createRESMSG->type = RES_MSG;
-		createRESMSG->requestNumber = createRECPayload->requestNumber;
-		createRESMSG->senderID = nodeID;
-		createRESMSG->receiverID = createRECPayload->senderID;
+		
    	 
    	 
 		//checks to see if nodeID are the same if no drop
@@ -194,6 +188,13 @@ fsm receiver
 		{
 			proceed WAIT_PKT;
 		}
+		createRESMSG = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
+		createRESMSG->groupID = createRECPayload->groupID;
+		createRESMSG->type = RES_MSG;
+		createRESMSG->requestNumber = createRECPayload->requestNumber;
+		createRESMSG->senderID = nodeID;
+		createRESMSG->receiverID = createRECPayload->senderID;
+		
 		if (entryCount <= 40)
 		{
 			DB[entryCount].ownerID = createRECPayload->senderID;
@@ -207,8 +208,8 @@ fsm receiver
 			createRESMSG->status = DATA_FULL;
 		}
 		requestNumberTracker = createRECPayload->requestNumber;
-    	//ser_out(CREATE_REC_START, "\r\nthe message:");
-    	//ser_out(CREATE_REC_START,DB[0].record);
+		// create response message for create
+		
     state create_RES_START:
 		packet = tcv_wnp(create_RES_START, sfd, CREATE_RESPACK_LEN);
 		packet[0] = NETWORK_ID;
@@ -226,12 +227,7 @@ fsm receiver
 	state RETRIEVE_REC_START:
 		struct retRecordMsg* retrieveRECPayload = (struct retRecordMsg *)(packet+1);
 		 
-		retrieveRESMSG = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
-		retrieveRESMSG->groupID = retrieveRECPayload->groupID;
-		retrieveRESMSG->type = RES_MSG;
-		retrieveRESMSG->requestNumber = retrieveRECPayload->requestNumber;
-		retrieveRESMSG->senderID = nodeID;
-		retrieveRESMSG->receiverID = retrieveRECPayload->senderID;
+		
 
 		 //checks to see if nodeID are the same if no drop
   	  	if (retrieveRECPayload->receiverID != nodeID)
@@ -247,7 +243,12 @@ fsm receiver
 			proceed WAIT_PKT;
 		}
 		requestNumberTracker = retrieveRECPayload->requestNumber;
-		
+		retrieveRESMSG = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
+		retrieveRESMSG->groupID = retrieveRECPayload->groupID;
+		retrieveRESMSG->type = RES_MSG;
+		retrieveRESMSG->requestNumber = retrieveRECPayload->requestNumber;
+		retrieveRESMSG->senderID = nodeID;
+		retrieveRESMSG->receiverID = retrieveRECPayload->senderID;
 		if(strlen(DB[retrieveRECPayload->recordIndex].record) != 0)
 		{
 			strncpy(retrieveRESMSG->record,DB[retrieveRECPayload->recordIndex].record,RECORD_SIZE);
@@ -257,6 +258,7 @@ fsm receiver
 		{
 			retrieveRESMSG->status = NO_ENTRY;
 		}
+		
 
 	state RETRIEVE_RES_START:
 		packet = tcv_wnp(RETRIEVE_RES_START, sfd, RETRIEVE_RESPACK_LEN);
@@ -272,16 +274,25 @@ fsm receiver
 
     state RESPONSE_START:
 		struct responseMsg* responsePayload = (struct responseMsg *)(packet+1);
+		
+		if (responsePayload->receiverID != nodeID)
+		{
+			proceed WAIT_PKT;
+		}
+		if (responsePayload->groupID != groupID)
+		{
+			proceed WAIT_PKT;
+		}
 		reponseTimeOut = 1;
 		if(responsePayload->status == SUCCESS)
 		{
 			if(responseType == CREATE)
 			{
-				ser_out(RESPONSE_START, "\r\nData saved ");
+				ser_out(RESPONSE_START, "\r\nData saved\n\r");
 			}
 			else if (responseType == RETRIEVE)
 			{
-				ser_outf(RESPONSE_START, "\r\nRecord Received from %u: %s",responsePayload->senderID,responsePayload->record);
+				ser_outf(RESPONSE_START, "\r\nRecord Received from %u: %s\n\r",responsePayload->senderID,responsePayload->record);
 			}
 
 			
@@ -341,9 +352,6 @@ fsm receiver
 		delRespPL->senderID = nodeID;
 		delRespPL->receiverID = delPtr->senderID;
 
-	state TEST:
-		ser_out(TEST, "\n\rdelete test2");
-
 	// Create packet
 	state DELETE_REC_PACKET:
 		packet = tcv_wnp(DELETE_REC_PACKET, sfd, RESPONSE_PACK_LEN);
@@ -363,7 +371,6 @@ fsm receiver
 	// ### START | DELETE RECORD RESPONSE | START ###
 
 	state DELETE_RESP_START:
-		ser_out(DELETE_RESP_START, "\n\r Response test \n\r");
 		struct responseMsg *delPtr = (struct responseMsg *)(packet+1);
 
 		// drop packet if not same node ID or group ID
@@ -491,7 +498,7 @@ fsm root
    	 
    	 
     state CREATE_RECEIVERID_OUT:
-		ser_out(CREATE_RECEIVERID_OUT, "\r\nEnter the destination ID (0-25)");
+		ser_out(CREATE_RECEIVERID_OUT, "\r\nEnter the destination ID (0-25): ");
    	 
     state CREATE_RECEIVERID_IN:
     	int temp = 0;
@@ -499,7 +506,7 @@ fsm root
     	createPayload->receiverID = temp;
     	
     state CREATE_GETMESSAGE_OUT:
-		ser_out(CREATE_GETMESSAGE_OUT, "\r\nWhat is the message you want to send (maximum 20 characters)");
+		ser_out(CREATE_GETMESSAGE_OUT, "\r\nThe message(maximum 20 characters): ");
     state CREATE_GETMESSAGE_IN:
 		ser_in(CREATE_GETMESSAGE_IN, createPayload->record,RECORD_SIZE);
 
@@ -526,8 +533,13 @@ fsm root
 		if (createSendCount < 2) {
 			proceed CREATE_PACKET;
 		}
-	
-		
+
+	//state temp11:
+		if(reponseTimeOut != 1)
+		{
+			ser_out(CREATE_LOOP, "\r\nNo response\r\n");
+			reponseTimeOut = 0;
+		}
 		ufree(createPayload);
 		proceed MENU;
     // ### END CREATE PROTCOL ###
@@ -546,14 +558,14 @@ fsm root
 		retrievePayload->senderID = nodeID;
 		retrievePayload->receiverID = 0;
     state RETRIEVE_RECEIVERID_OUT:
-		ser_out(RETRIEVE_RECEIVERID_OUT, "\r\nEnter the destination ID (0-25) ");
+		ser_out(RETRIEVE_RECEIVERID_OUT, "\r\nEnter the destination ID (0-25): ");
 	state RETRIEVE_RECEIVERID_IN:
 		int temp = 0;
 		ser_inf(RETRIEVE_RECEIVERID_IN, "%u", &temp);
 		retrievePayload->receiverID = temp;
 
 	state RETRIEVE_INDEX_OUT:
-		 ser_out(RETRIEVE_INDEX_OUT, "\r\nWhat record index do you want to retrieve ");
+		 ser_out(RETRIEVE_INDEX_OUT, "\r\nWhat record index do you want to retrieve: ");
 	state RETRIEVE_INDEX_IN:
 		int tempIndex = 0;
 		ser_inf(RETRIEVE_INDEX_IN, "%u",&tempIndex);
@@ -575,9 +587,11 @@ fsm root
 		if (retrieveSendCount < 2) {
 			proceed RETRIEVE_PACKET;
 		}
+	state temp2:
 		if(reponseTimeOut != 1)
 		{
-			ser_out(CREATE_LOOP, "\r\nNo response");
+			ser_out(temp2, "\r\nNo response\r\n");
+			reponseTimeOut = 0;
 		}
 		ufree(retrievePayload);
 		proceed MENU;
@@ -767,7 +781,7 @@ fsm root
 		record = ptr->record;
 
 		// Display entry
-		ser_outf(DISPLAY_ENTRY, "%u\t%u\t\t%u\t%s\r\n", currentIndex, timeStamp, owner, ptr->record);
+		ser_outf(DISPLAY_ENTRY, "%u\t%u\t\t%u\t\t%s\r\n", currentIndex, timeStamp, owner, ptr->record);
 
 	// Check if more entries, if not end
 	state DISPLAY_END:
@@ -799,3 +813,7 @@ fsm root
 
 	// ### END | RESET STORAGE | END ###
 }
+
+
+
+
