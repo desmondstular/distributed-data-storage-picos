@@ -30,7 +30,8 @@ byte response = NO;
 
 // Root and receiver communication
 byte requestNum = 0;
-byte delResponseStatus;
+byte responseType = 0;
+byte responseStatus = 0;
 
 /*
  * Deletes a database entry by shifting entries
@@ -38,13 +39,12 @@ byte delResponseStatus;
 */
 void deleteEntry (int index) {
 	int i;
+	struct dbEntry temp;
 	// Shift over each struct till last index
 	for (i = index; i < entryCount-1; i++) {
 		DB[i] = DB[i+1];
 	}
 
-	// Assign empty struct to last database entry
-	struct dbEntry temp;
 	DB[i] = temp;
 
 	// Remove one from count
@@ -71,60 +71,66 @@ fsm receiver
     char createResponseSwitch;
     // Wait to receive packet
     state WAIT_PKT:
-   	 packet = tcv_rnp(WAIT_PKT, sfd);
+   		packet = tcv_rnp(WAIT_PKT, sfd);
 
     // Received packet
     state RECEIVED_PKT:
-   	 byte *type = (byte*)(packet+2);
-   	 
-   	 ser_out(RECEIVED_PKT, "\n\r13413434");
+   		byte *type = (byte*)(packet+2);
 
-   	 // Check type of packet
-   	 switch (*type) {
-   		 case DIS_REQ:     proceed DISCOVER_REQ_START;
-   		 case DIS_RES:     proceed DISCOVER_RES_START;
-   		 case NEW_REC:     proceed CREATE_REC_START;    //todo
-   		 case DEL_REC:     proceed WAIT_PKT;    //todo
-   		 case RET_REC:     proceed WAIT_PKT;    //todo
-   		 case RES_MSG:     proceed RESPONSE_START;    //todo
-   		 default:    	 proceed WAIT_PKT;
-   	 }
+		// Check type of packet
+		switch (*type) {
+			case DIS_REQ:     proceed DISCOVER_REQ_START;
+			case DIS_RES:     proceed DISCOVER_RES_START;
+			case NEW_REC:     proceed CREATE_REC_START;    //todo
+			case DEL_REC:     proceed DELETE_REC_START;
+			case RET_REC:     proceed WAIT_PKT;    //todo
+			case RES_MSG:     proceed CHECK_RES_TYPE;
+			default:    	 proceed WAIT_PKT;
+		}
+
+	// Checks reponse message protocol type
+	state CHECK_RES_TYPE:
+		switch (responseType) {
+			case CREATE:	proceed RESPONSE_START;
+			case DELETE:	proceed DELETE_RESP_START; 
+			default:		proceed WAIT_PKT;
+		}
 
 
     // ### START | DISCOVERY REQUEST PACKET | START ###
 
     // Check packet payload, and build payload if in same group
     state DISCOVER_REQ_START:
-   	 struct discoveryMsg *payload = (struct discoveryMsg*)(packet+1);
+		struct discoveryMsg *payload = (struct discoveryMsg*)(packet+1);
 
-   	 // If not in same group, end protocol
-   	 if (payload->groupID != groupID) {
-   		 proceed WAIT_PKT;
-   	 }
+		// If not in same group, end protocol
+		if (payload->groupID != groupID) {
+			proceed WAIT_PKT;
+		}
 
-   	 // Build discovery response payload
-   	 dReqPayload = (struct discoveryMsg*)umalloc(sizeof(struct discoveryMsg));
-   	 dReqPayload->groupID = groupID;
-   	 dReqPayload->type = DIS_RES;
-   	 dReqPayload->requestNum = payload->requestNum;
-   	 dReqPayload->senderID = nodeID;
-   	 dReqPayload->receiverID = payload->senderID;
+		// Build discovery response payload
+		dReqPayload = (struct discoveryMsg*)umalloc(sizeof(struct discoveryMsg));
+		dReqPayload->groupID = groupID;
+		dReqPayload->type = DIS_RES;
+		dReqPayload->requestNum = payload->requestNum;
+		dReqPayload->senderID = nodeID;
+		dReqPayload->receiverID = payload->senderID;
     
     // Create packet and send, then end protocol
     state DISCOVER_REQ_SEND:
-   	 packet = tcv_wnp(DISCOVER_REQ_SEND, sfd, DIS_PACK_LEN);
-   	 packet[0] = NETWORK_ID;
+		packet = tcv_wnp(DISCOVER_REQ_SEND, sfd, DIS_PACK_LEN);
+		packet[0] = NETWORK_ID;
 
-   	 // Add payload to packet
-   	 struct discoveryMsg* ptr = (struct discoveryMsg *)(packet+1);
-   	 *ptr = *dReqPayload;
+		// Add payload to packet
+		struct discoveryMsg* ptr = (struct discoveryMsg *)(packet+1);
+		*ptr = *dReqPayload;
 
-   	 // Send packet and free payload from memory
-   	 tcv_endp(packet);
-   	 ufree(dReqPayload);
+		// Send packet and free payload from memory
+		tcv_endp(packet);
+		ufree(dReqPayload);
 
-   	 // End protocol
-   	 proceed WAIT_PKT;
+		// End protocol
+		proceed WAIT_PKT;
 
     // ### END | DISCOVERY REQUEST PACKET | END ###
 
@@ -133,144 +139,151 @@ fsm receiver
 
     // Check packet payload for same groupID and request number
     state DISCOVER_RES_START:
-   	 struct discoveryMsg *payload = (struct discoveryMsg*)(packet+1);
-   	 byte recGroupID = payload->groupID;
-   	 byte recRequestNum = payload->requestNum;
-   	 byte senderID = payload->senderID;
+		struct discoveryMsg *payload = (struct discoveryMsg*)(packet+1);
+		byte recGroupID = payload->groupID;
+		byte recRequestNum = payload->requestNum;
+		byte senderID = payload->senderID;
 
-   	 // If not in same group or different request number, stop
-   	 if (recGroupID != groupID || recRequestNum != requestNum) {
-   		 proceed WAIT_PKT;
-   	 }
+		// If not in same group or different request number, stop
+		if (recGroupID != groupID || recRequestNum != requestNum) {
+			proceed WAIT_PKT;
+		}
 
-   	 // If in neighbors array, end protocol
-   	 for (int i=0; i < neighborCount; i++) {
-   		 if (neighbors[i] == senderID) {
-   			 proceed WAIT_PKT;
-   		 }
-   	 }
+		// If in neighbors array, end protocol
+		for (int i=0; i < neighborCount; i++) {
+			if (neighbors[i] == senderID) {
+				proceed WAIT_PKT;
+			}
+		}
 
-   	 // Add to neighbors array, end protocol
-   	 neighbors[neighborCount] = senderID;
-   	 neighborCount++;
-   	 proceed WAIT_PKT;
+		// Add to neighbors array, end protocol
+		neighbors[neighborCount] = senderID;
+		neighborCount++;
+		proceed WAIT_PKT;
 
     // ### END | DISCOVERY RESPONSE PACKET | END ###
     
     // ### start create
     state CREATE_REC_START:
     
-   	 //payload
-   	 struct newRecordMsg* createRECPayload = (struct newRecordMsg *)(packet+1);
-   	 
-   	 ser_out(CREATE_REC_START, "\r\ngotpacket");
-   	 
-   	 // create response message for create
-   	 createRESMSG = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
-   	 createRESMSG->groupID = createRECPayload->groupID;
-   	 createRESMSG->type = RES_MSG;
-   	 createRESMSG->requestNumber = createRECPayload->requestNumber;
-   	 createRESMSG->senderID = nodeID;
-   	 createRESMSG->receiverID = createRECPayload->senderID;
+		//payload
+		struct newRecordMsg* createRECPayload = (struct newRecordMsg *)(packet+1);
+		
+		// create response message for create
+		createRESMSG = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
+		createRESMSG->groupID = createRECPayload->groupID;
+		createRESMSG->type = RES_MSG;
+		createRESMSG->requestNumber = createRECPayload->requestNumber;
+		createRESMSG->senderID = nodeID;
+		createRESMSG->receiverID = createRECPayload->senderID;
    	 
    	 
-   	 //checks to see if nodeID are the same if no drop
-   	 if (createRECPayload->receiverID != nodeID)
-   	 {
-   		 proceed WAIT_PKT;
-   	 }
-   	 if (createRECPayload->groupID != groupID)
-   	 {
-   		 proceed WAIT_PKT;
-   	 }
-   	 if(requestNumberTracker == createRECPayload->requestNumber)
-   	 {
-   	 	proceed WAIT_PKT;
-   	 }
-   	 if (entryCount <= 40)
-   	 {
-   		 DB[entryCount].ownerID = createRECPayload->senderID;
-   		 for(int i =0; i>20;i++)
-   		 {
-   			 DB[entryCount].record[i] = createRECPayload->record[i];
-   		 }
-   		 
-   		 DB[entryCount].timeStamp = seconds();
-   		 entryCount++;
-   		 createRESMSG->status = SUCCESS;
-   	 }
-   	 else
-   	 {
-   	 	createRESMSG->status = DATA_FULL;
-   	 }
-   	 requestNumberTracker = createRECPayload->requestNumber;
+		//checks to see if nodeID are the same if no drop
+		if (createRECPayload->receiverID != nodeID)
+		{
+			proceed WAIT_PKT;
+		}
+		if (createRECPayload->groupID != groupID)
+		{
+			proceed WAIT_PKT;
+		}
+		if(requestNumberTracker == createRECPayload->requestNumber)
+		{
+			proceed WAIT_PKT;
+		}
+		if (entryCount <= 40)
+		{
+			DB[entryCount].ownerID = createRECPayload->senderID;
+			for(int i =0; i>20;i++)
+			{
+				DB[entryCount].record[i] = createRECPayload->record[i];
+			}
+			
+			DB[entryCount].timeStamp = seconds();
+			entryCount++;
+			createRESMSG->status = SUCCESS;
+		}
+		else
+		{
+			createRESMSG->status = DATA_FULL;
+		}
+		requestNumberTracker = createRECPayload->requestNumber;
     	//ser_out(CREATE_REC_START, "\r\nthe message:");
     	//ser_out(CREATE_REC_START,DB[0].record);
     state create_RES_START:
-   	 packet = tcv_wnp(create_RES_START, sfd, CREATE_RESPACK_LEN);
-   	 packet[0] = NETWORK_ID;
+		packet = tcv_wnp(create_RES_START, sfd, CREATE_RESPACK_LEN);
+		packet[0] = NETWORK_ID;
    	 
     state CREATE_RES_SEND:
-   	 struct responseMsg *createPTR = (struct responseMsg *)(packet+1);
-   	 *createPTR= *createRESMSG;
-   	 tcv_endp(packet);
+		struct responseMsg *createPTR = (struct responseMsg *)(packet+1);
+		*createPTR= *createRESMSG;
+		tcv_endp(packet);
    	 
-   	 
-   	 ufree(createRESMSG);
-   	 proceed WAIT_PKT;
+
+		ufree(createRESMSG);
+		proceed WAIT_PKT;
    	 
    state RESPONSE_START:
 
   	struct responseMsg* responsePayload = (struct responseMsg *)(packet+1);
   	
-  	if(responsePayload->status == SUCCESS)
-  	{
-  		ser_out(RESPONSE_START, "\r\nData saved ");
+		if(responsePayload->status == SUCCESS)
+		{
+			ser_out(RESPONSE_START, "\r\nData saved ");
 
-  		
-  	}
-  	else if (responsePayload->status == DATA_FULL)
-  	{
-  		ser_out(RESPONSE_START, "\r\nNode Full");
-  	}
-  	proceed WAIT_PKT;
+			
+		}
+		else if (responsePayload->status == DATA_FULL)
+		{
+			ser_out(RESPONSE_START, "\r\nNode Full");
+		}
+		proceed WAIT_PKT;
     
     // ### START | Delete Record Protocol | Start ###
 
 	state DELETE_REC_START:
 		struct delRecordMsg *delPtr = (struct delRecordMsg *)(packet+1);
-		
 		// drop packet if not same node ID or group ID
 		if (delPtr->receiverID != nodeID || delPtr->groupID != groupID) {
 			proceed WAIT_PKT;
 		}
-
+		
 		// Initialize packet payload
 		delRespPL = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
 
-		//check if entry in database. If not, build payload for fail
-		if (delPtr->recordIndex > (entryCount-1)) {
-			delRespPL->groupID = groupID;
-			delRespPL->type = delPtr->type;
-			delRespPL->requestNumber = delPtr->requestNumber;
-			delRespPL->senderID = nodeID;
-			delRespPL->receiverID = delPtr->senderID;
+		// delete fail if index does not have entry
+		if (delPtr->recordIndex >= entryCount) {
 			delRespPL->status =  DELETE_FAIL;
-		}
-
-		// Delete entry, then 
+		} 
 		else {
-			// Delete entry at index
-			deleteEntry(delPtr->recordIndex);
+			struct dbEntry temp;
+			if (entryCount == 1) {
+				DB[0] = temp;
+			}
+			else {
+				int i = delPtr->recordIndex;
+				// Delete entry at index
+				// Shift over each struct till last index
+				for (i; i < entryCount-1; i++) {
+					DB[i] = DB[i+1];
+				}
+				DB[i] = temp;
+			}
 
-			// Build response payload
-			delRespPL->groupID = groupID;
-			delRespPL->type = delPtr->type;
-			delRespPL->requestNumber = delPtr->requestNumber;
-			delRespPL->senderID = nodeID;
-			delRespPL->receiverID = delPtr->senderID;
+			// Remove one from count, set to success status
+			entryCount--;
 			delRespPL->status =  SUCCESS;
 		}
+
+		// Build rest of payload
+		delRespPL->groupID = groupID;
+		delRespPL->type = RES_MSG;
+		delRespPL->requestNumber = delPtr->requestNumber;
+		delRespPL->senderID = nodeID;
+		delRespPL->receiverID = delPtr->senderID;
+
+	state TEST:
+		ser_out(TEST, "\n\rdelete test2");
 
 	// Create packet
 	state DELETE_REC_PACKET:
@@ -291,6 +304,7 @@ fsm receiver
 	// ### START | DELETE RECORD RESPONSE | START ###
 
 	state DELETE_RESP_START:
+		ser_out(DELETE_RESP_START, "\n\r Response test \n\r");
 		struct responseMsg *delPtr = (struct responseMsg *)(packet+1);
 
 		// drop packet if not same node ID or group ID
@@ -305,7 +319,7 @@ fsm receiver
 
 		// change global variables for root fsm notification
 		response = YES;
-		delResponseStatus = delPtr->status;
+		responseStatus = delPtr->status;
 
 		// End of protocol
 		proceed WAIT_PKT;
@@ -330,8 +344,8 @@ fsm root
     int createSendCount = 0;
 
 	// Delete Protocol Variables
-	byte destID;
-	byte deleteIndex;
+	byte deleteIndex = 0;
+	int dest = 0;
 	struct delRecordMsg *delRecPl;
 
 	// Display DB Entries Variables
@@ -339,66 +353,66 @@ fsm root
     
     // Initialize node
     state INIT_SESSION:
-   	 phys_cc1350(0, CC1350_BUF_SZ);
-   	 tcv_plug(0, &plug_null);
-   	 sfd = tcv_open(NONE, 0, 0);
+   	 	phys_cc1350(0, CC1350_BUF_SZ);
+   	 	tcv_plug(0, &plug_null);
+   	 	sfd = tcv_open(NONE, 0, 0);
 
-   	 // If session did not open
-   	 if (sfd < 0)
-   	 {
-   		 diag("unable to open TCV session");
-   		 syserror(EASSERT, "no session");
-   	 }
+		// If session did not open
+		if (sfd < 0)
+		{
+			diag("unable to open TCV session");
+			syserror(EASSERT, "no session");
+		}
 
-   	 tcv_control(sfd, PHYSOPT_ON, NULL);
+   		tcv_control(sfd, PHYSOPT_ON, NULL);
 
-   	 // Start receiver FSM
-   	 runfsm receiver;
+		// Start receiver FSM
+		runfsm receiver;
 
     // Show sender menu and get input
     state MENU:
-   	 ser_outf(MENU, "\r\nGroup %u Device #%u (%u/%u records)\r\n(G)roup ID\r\n(N)ew device ID\n\r(F)ind neighbors\r\n(C)reate record on neighbor\r\n(D)elete record on neighbor\r\n(R)etrieve record from neighbor\r\n(S)how local records\r\nR(e)set local storage\r\n\r\nSelection: ", groupID, nodeID, entryCount, DATABASE_SIZE);
+   	 	ser_outf(MENU, "\r\nGroup %u Device #%u (%u/%u records)\r\n(G)roup ID\r\n(N)ew device ID\n\r(F)ind neighbors\r\n(C)reate record on neighbor\r\n(D)elete record on neighbor\r\n(R)etrieve record from neighbor\r\n(S)how local records\r\nR(e)set local storage\r\n\r\nSelection: ", groupID, nodeID, entryCount, DATABASE_SIZE);
 
     // Get user input
     state MENU_INPUT:
-   	 ser_inf(MENU_INPUT, "%c", &c);
+   	 	ser_inf(MENU_INPUT, "%c", &c);
 
-    switch (c)
-    {
-   	 case 'g': case 'G': proceed CHANGE_GROUPID_OUT;    	 
-   	 case 'n': case 'N': proceed NEW_NODEID_OUT;    	 
-   	 case 'f': case 'F': proceed DISCOVER_START;
-   	 case 'c': case 'C': proceed CREATE_START;    	 
-   	 case 'd': case 'D': proceed DELETE_START;
-   	 case 'r': case 'R': proceed MENU;    	 // todo
-   	 case 's': case 'S': proceed DISPLAY_START;
-   	 case 'e': case 'E': proceed RESET_START;
-   	 default:    		 proceed MENU;
-    }
+		switch (c)
+		{
+			case 'g': case 'G': proceed CHANGE_GROUPID_OUT;    	 
+			case 'n': case 'N': proceed NEW_NODEID_OUT;    	 
+			case 'f': case 'F': proceed DISCOVER_START;
+			case 'c': case 'C': proceed CREATE_START;    	 
+			case 'd': case 'D': proceed DELETE_START;
+			case 'r': case 'R': proceed MENU;    	 // todo
+			case 's': case 'S': proceed DISPLAY_START;
+			case 'e': case 'E': proceed RESET_START;
+			default:    		proceed MENU;
+		}
     // change groupID protocol
     state CHANGE_GROUPID_OUT:
-   	 //states current group ID and node ID
-   	 //ser_outf(CHANGE_GROUPID_OUT, "\r\nThe current group ID: %u for the node %u\n\n\rWhat do you want the new group ID to be:", groupID, nodeID);
-   	 ser_out(CHANGE_GROUPID_OUT, "\r\nEnter new group id: ");
+		//states current group ID and node ID
+		//ser_outf(CHANGE_GROUPID_OUT, "\r\nThe current group ID: %u for the node %u\n\n\rWhat do you want the new group ID to be:", groupID, nodeID);
+		ser_out(CHANGE_GROUPID_OUT, "\r\nEnter new group id: ");
     state CHANGE_GROUPID_IN:
     	int GIDTemp = 0;
-   	 // takes user input for groupID
-   	 ser_inf(CHANGE_GROUPID_IN, "%u", &GIDTemp);
-   	 groupID = GIDTemp;
-   	 proceed MENU;
+		// takes user input for groupID
+		ser_inf(CHANGE_GROUPID_IN, "%u", &GIDTemp);
+		groupID = GIDTemp;
+		proceed MENU;
    	 
     // change nodeID protocol
     
     state NEW_NODEID_OUT:
-    //states current group ID and node ID
-   	 ser_out(NEW_NODEID_OUT, "\r\nEnter new node id: ");
+    	//states current group ID and node ID
+   	 	ser_out(NEW_NODEID_OUT, "\r\nEnter new node id: ");
 
     state NEW_NODEID_IN:
-   	 // takes user input for nodeID
-   	 int NIDTemp = 0;
-   	 ser_inf(NEW_NODEID_IN, "%u", &NIDTemp);
-   	 nodeID = NIDTemp;
-   	 proceed MENU;
+		// takes user input for nodeID
+		int NIDTemp = 0;
+		ser_inf(NEW_NODEID_IN, "%u", &NIDTemp);
+		nodeID = NIDTemp;
+		proceed MENU;
     // test message to makes sure everything is running
     // ### CREATE MESSAGE PROTOCOL ###
     
@@ -407,6 +421,7 @@ fsm root
     
 		//initaized create payload
 		createSendCount = 0;
+		responseType = CREATE;
 		createPayload = (struct newRecordMsg*)umalloc(sizeof(struct newRecordMsg));
 		createPayload->groupID = groupID;
 		createPayload->type = NEW_REC;
@@ -506,24 +521,31 @@ fsm root
 		// Free payload
 		ufree(discPayload);
 		
-		// Show how many and which neighbors were reached
-		state DISCOVER_REACHED:
-		char reached[50];
-
-		// Build string of neighbors to show node user
-		for (int i=0; i < neighborCount; i++) {
-			form(reached, "#%u ", neighbors[i]);
-		}
+	// Show how many and which neighbors were reached
+	state DISCOVER_REACHED:
+		currentIndex = 0;
 
 		// Shows neighbor nodes if found more than zero
 		if (neighborCount != 0) {
-			ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\rNeighbors: %s\n\r", neighborCount, reached);
+			ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\rNeighbors: | ", neighborCount);
 		}
 		else {
-			ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\r", neighborCount, reached);
+			ser_outf(DISCOVER_REACHED, "\n\rFound %d neighbors!\n\r", neighborCount);
+			proceed MENU;
 		}
+	
+	state DISCOVER_NEIGHBOR:
+		ser_outf(DISCOVER_NEIGHBOR, "#%u | ", neighbors[currentIndex]);
+		currentIndex++;
+
+	// If more neighbors, keep printing, otherwise stop
+	state DISCOVER_END:
+		if (currentIndex < neighborCount) {
+			proceed DISCOVER_NEIGHBOR;
+		}
+
+		currentIndex = 0;
 		proceed MENU;
-		
 
     // ### END DISCOVERY REQUEST PROTOCOL END ###
 
@@ -532,15 +554,15 @@ fsm root
 
 	// Delete protocol start; ask for destination ID
 	state DELETE_START:
-		ser_out(DELETE_START, "Enter destination ID: ");
-	
+		ser_out(DELETE_START, "Enter destination: ");
+
 	// Get destination ID
 	state DELETE_GET_DEST:
-		ser_inf(DELETE_GET_DEST, "%u", &destID);
-	
+		ser_inf(DELETE_GET_DEST, "%d", &dest);
+
 	// Ask for index of entry to delete
-	state DELETE_ASK_INDEX:
-		ser_out(DELETE_ASK_INDEX, "Enter entry index: ");
+	state DELETE_INDEX:
+		ser_out(DELETE_INDEX, "Enter index: ");
 
 	// Get index of entry to delete
 	state DELETE_GET_INDEX:
@@ -548,13 +570,14 @@ fsm root
 	
 	// Build payload 
 	state DELETE_PAYLOAD:
+		responseType = DELETE;
 		delRecPl = (struct delRecordMsg*)umalloc(sizeof(struct delRecordMsg));
-		requestNum = (byte)(rnd() % 256);
+		requestNum = (byte)(lrnd() % 256);
 		delRecPl->groupID = groupID;
 		delRecPl->type = DEL_REC;
 		delRecPl->requestNumber = requestNum;
 		delRecPl->senderID = nodeID;
-		delRecPl->receiverID = destID;
+		delRecPl->receiverID = dest;
 		delRecPl->recordIndex = deleteIndex;
 
 	// Fill packet with payload and send
@@ -570,11 +593,16 @@ fsm root
 		tcv_endp(packet);
 
 		// Wait 3 seconds
-		delay(3000 * MS, sending);
+		delay(3000 * MS, DELETE_SENT);
 		release;
+	
+	state DELETE_SENT:
 
 		// Free payload
 		ufree(discPayload);
+
+		// Clear response type
+		responseType = 0;
 
 		// If received no response
 		if (response == NO) {
@@ -582,7 +610,7 @@ fsm root
 		}
 
 		// If response success, proceed to success state
-		if (delResponseStatus == SUCCESS) {
+		if (responseStatus == SUCCESS) {
 			proceed DELETE_RESPONSE_SUCCESS;
 		}
 
@@ -593,18 +621,18 @@ fsm root
 
 	// Failed to delete as there was no response
 	state DELETE_NO_RESPONSE:
-		ser_out(DELETE_NO_RESPONSE, "\r\nFailed to reach the destination");
+		ser_out(DELETE_NO_RESPONSE, "\r\nFailed to reach the destination\n\r");
 		proceed MENU;
 
 	// Delete was successful
 	state DELETE_RESPONSE_SUCCESS:
-		ser_out(DELETE_RESPONSE_SUCCESS, "\r\nRecord Deleted");
+		ser_out(DELETE_RESPONSE_SUCCESS, "\r\nRecord Deleted\n\r");
 		response = NO;
 		proceed MENU;
 
 	// Delete failed as the record did not exist
 	state DELETE_RESPONSE_FAIL:
-		ser_outf(DELETE_RESPONSE_FAIL, "\r\nThe record does not exist on node %u", destID);
+		ser_outf(DELETE_RESPONSE_FAIL, "\r\nThe record does not exist on node %u\n\r", dest);
 		response = NO;
 		proceed MENU;
 
@@ -612,25 +640,28 @@ fsm root
 
 
 	// ### START | DISPLAY DATABASE | START ###
-	struct dbEntry DB[DATABASE_SIZE];
-	byte entryCount = 0;
-	int currentIndex = 0;
 
 	// START: Display all entries in the nodes db
 	state DISPLAY_START:
+		currentIndex = 0;
+		// If empty, display message and leave
+		if (entryCount == 0) {
+			ser_out(DISPLAY_START, "\n\rStorage empty\n\r");
+			proceed MENU;
+		}
 		// display table header
-		ser_out(DISPLAY_START, "\r\nIndex\tTimestamp\tOwner ID\tRecord Data");
-	
+		ser_out(DISPLAY_START, "\r\nIndex\tTimestamp\tOwner ID\tRecord Data\r\n");
+
 	// Displays entry at current index
 	state DISPLAY_ENTRY:
-		char record[RECORD_SIZE];
+		char *record;
 		struct dbEntry *ptr = &DB[currentIndex];
-		word index = ptr->ownerID;
+		word owner = ptr->ownerID;
 		lword timeStamp = ptr->timeStamp;
-		strcpy(record, ptr->record);
+		record = ptr->record;
 
 		// Display entry
-		ser_outf(DISPLAY_ENTRY, "\r\n%-8u%-12u%-12u%s", index, timeStamp, index, record);
+		ser_outf(DISPLAY_ENTRY, "%u\t%u\t\t%u\t%s\r\n", currentIndex, timeStamp, owner, ptr->record);
 
 	// Check if more entries, if not end
 	state DISPLAY_END:
@@ -640,7 +671,7 @@ fsm root
 		if (currentIndex < entryCount) {
 			proceed DISPLAY_ENTRY;
 		}
-		currentIndex = 0;
+		
 		proceed MENU;
 
 	// ### END | DISPLAY DATABASE | END ###
@@ -655,6 +686,9 @@ fsm root
 			DB[i] = empty;
 		}
 		entryCount = 0;
+	
+	state RESET_END:
+		ser_out(RESET_END, "\n\rStorage is now empty\n\r");
 		proceed MENU;
 
 	// ### END | RESET STORAGE | END ###
