@@ -2,7 +2,7 @@
  * app.cc
  *
  * CMPT 464 - Assignment 2
- * Authors: Ben Nourse
+ * Authors: Ben Nourse (3086842)
  *      	Desmond Stular (3067040)
  *	Date: March 11, 2024
  */
@@ -33,6 +33,7 @@ byte requestNum = 0;
 byte responseType = 0;
 byte responseStatus = 0;
 
+int reponseTimeOut =0;
 /*
  * Deletes a database entry by shifting entries
  * over if their is a hole from deletion.
@@ -66,9 +67,10 @@ fsm receiver
     struct discoveryMsg *dReqPayload;
     struct responseMsg *createRESMSG;
     struct responseMsg *delRespPL;
-    
+    struct responseMsg *retrieveRESMSG;
+
+
     byte requestNumberTracker = 0;
-    char createResponseSwitch;
     // Wait to receive packet
     state WAIT_PKT:
    		packet = tcv_rnp(WAIT_PKT, sfd);
@@ -83,7 +85,7 @@ fsm receiver
 			case DIS_RES:     proceed DISCOVER_RES_START;
 			case NEW_REC:     proceed CREATE_REC_START;    //todo
 			case DEL_REC:     proceed DELETE_REC_START;
-			case RET_REC:     proceed WAIT_PKT;    //todo
+			case RET_REC:     proceed RETRIEVE_REC_START;    //todo
 			case RES_MSG:     proceed CHECK_RES_TYPE;
 			default:    	 proceed WAIT_PKT;
 		}
@@ -92,6 +94,7 @@ fsm receiver
 	state CHECK_RES_TYPE:
 		switch (responseType) {
 			case CREATE:	proceed RESPONSE_START;
+			case RETRIEVE:	proceed RESPONSE_START;
 			case DELETE:	proceed DELETE_RESP_START; 
 			default:		proceed WAIT_PKT;
 		}
@@ -194,11 +197,7 @@ fsm receiver
 		if (entryCount <= 40)
 		{
 			DB[entryCount].ownerID = createRECPayload->senderID;
-			for(int i =0; i>20;i++)
-			{
-				DB[entryCount].record[i] = createRECPayload->record[i];
-			}
-			
+			strncpy(DB[entryCount].record,createRECPayload->record,RECORD_SIZE);
 			DB[entryCount].timeStamp = seconds();
 			entryCount++;
 			createRESMSG->status = SUCCESS;
@@ -222,20 +221,80 @@ fsm receiver
 
 		ufree(createRESMSG);
 		proceed WAIT_PKT;
-   	 
-   state RESPONSE_START:
+   	 //### end create
+	 //## START RETRIEEVE RECIVEVE
+	state RETRIEVE_REC_START:
+		struct retRecordMsg* retrieveRECPayload = (struct retRecordMsg *)(packet+1);
+		 
+		retrieveRESMSG = (struct responseMsg*)umalloc(sizeof(struct responseMsg));
+		retrieveRESMSG->groupID = retrieveRECPayload->groupID;
+		retrieveRESMSG->type = RES_MSG;
+		retrieveRESMSG->requestNumber = retrieveRECPayload->requestNumber;
+		retrieveRESMSG->senderID = nodeID;
+		retrieveRESMSG->receiverID = retrieveRECPayload->senderID;
 
-  	struct responseMsg* responsePayload = (struct responseMsg *)(packet+1);
-  	
+		 //checks to see if nodeID are the same if no drop
+  	  	if (retrieveRECPayload->receiverID != nodeID)
+		{
+			proceed WAIT_PKT;
+		}
+		if (retrieveRECPayload->groupID != groupID)
+		{
+			proceed WAIT_PKT;
+		}
+		if(requestNumberTracker == retrieveRECPayload->requestNumber)
+		{
+			proceed WAIT_PKT;
+		}
+		requestNumberTracker = retrieveRECPayload->requestNumber;
+		
+		if(strlen(DB[retrieveRECPayload->recordIndex].record) != 0)
+		{
+			strncpy(retrieveRESMSG->record,DB[retrieveRECPayload->recordIndex].record,RECORD_SIZE);
+			retrieveRESMSG->status = SUCCESS;
+		}
+		else
+		{
+			retrieveRESMSG->status = NO_ENTRY;
+		}
+
+	state RETRIEVE_RES_START:
+		packet = tcv_wnp(RETRIEVE_RES_START, sfd, RETRIEVE_RESPACK_LEN);
+		packet[0] = NETWORK_ID;
+	
+	state RETRIEVE_RES_SEND:
+		struct responseMsg *RETRIEVEPTR = (struct responseMsg *)(packet+1);
+		*RETRIEVEPTR= *retrieveRESMSG;
+		tcv_endp(packet);
+		
+		ufree(retrieveRESMSG);
+		proceed WAIT_PKT;
+
+    state RESPONSE_START:
+		struct responseMsg* responsePayload = (struct responseMsg *)(packet+1);
+		reponseTimeOut = 1;
 		if(responsePayload->status == SUCCESS)
 		{
-			ser_out(RESPONSE_START, "\r\nData saved ");
+			if(responseType == CREATE)
+			{
+				ser_out(RESPONSE_START, "\r\nData saved ");
+			}
+			else if (responseType == RETRIEVE)
+			{
+				ser_outf(RESPONSE_START, "\r\nRecord Received from %u: %s",responsePayload->senderID,responsePayload->record);
+			}
+
+			
 
 			
 		}
 		else if (responsePayload->status == DATA_FULL)
 		{
 			ser_out(RESPONSE_START, "\r\nNode Full");
+		}
+		else if(responsePayload->status == NO_ENTRY)
+		{
+			 ser_outf(RESPONSE_START, "\r\nThe record does not exist on node %u",responsePayload->senderID);
 		}
 		proceed WAIT_PKT;
     
@@ -347,6 +406,9 @@ fsm root
 	byte deleteIndex = 0;
 	int dest = 0;
 	struct delRecordMsg *delRecPl;
+	//  retreieve potocol varaibles
+	int retrieveSendCount = 0;
+	struct retRecordMsg *retrievePayload;
 
 	// Display DB Entries Variables
 	int currentIndex = 0;
@@ -384,15 +446,13 @@ fsm root
 			case 'f': case 'F': proceed DISCOVER_START;
 			case 'c': case 'C': proceed CREATE_START;    	 
 			case 'd': case 'D': proceed DELETE_START;
-			case 'r': case 'R': proceed MENU;    	 // todo
+			case 'r': case 'R': proceed RETRIEVE_START;    	 // todo
 			case 's': case 'S': proceed DISPLAY_START;
 			case 'e': case 'E': proceed RESET_START;
 			default:    		proceed MENU;
 		}
     // change groupID protocol
     state CHANGE_GROUPID_OUT:
-		//states current group ID and node ID
-		//ser_outf(CHANGE_GROUPID_OUT, "\r\nThe current group ID: %u for the node %u\n\n\rWhat do you want the new group ID to be:", groupID, nodeID);
 		ser_out(CHANGE_GROUPID_OUT, "\r\nEnter new group id: ");
     state CHANGE_GROUPID_IN:
     	int GIDTemp = 0;
@@ -441,13 +501,8 @@ fsm root
     state CREATE_GETMESSAGE_OUT:
 		ser_out(CREATE_GETMESSAGE_OUT, "\r\nWhat is the message you want to send (maximum 20 characters)");
     state CREATE_GETMESSAGE_IN:
-		char recordTemp[RECORD_SIZE];
-		ser_inf(CREATE_GETMESSAGE_IN, "%c", &recordTemp);
-   	 
-   	 for(int i =0; i <RECORD_SIZE; i++)
-   	 {
-   	 	createPayload->record[i] = recordTemp[i];
-   	 }
+		ser_in(CREATE_GETMESSAGE_IN, createPayload->record,RECORD_SIZE);
+
    	 
    	 
    	 
@@ -476,9 +531,60 @@ fsm root
 		ufree(createPayload);
 		proceed MENU;
     // ### END CREATE PROTCOL ###
-    // ### DISCOVERY REQUEST PROTOCOL ####
 
-    // Reset neighbors + build payload
+	 // ##3 START RRETRIEVE PRTOCOL ##
+
+
+    
+	state RETRIEVE_START:
+		responseType = RETRIEVE;
+		retrieveSendCount = 0;
+		retrievePayload = (struct retRecordMsg*)umalloc(sizeof(struct retRecordMsg));
+		retrievePayload->groupID = groupID;
+		retrievePayload->type = RET_REC;
+		retrievePayload->requestNumber = (byte)(lrnd() % 256);
+		retrievePayload->senderID = nodeID;
+		retrievePayload->receiverID = 0;
+    state RETRIEVE_RECEIVERID_OUT:
+		ser_out(RETRIEVE_RECEIVERID_OUT, "\r\nEnter the destination ID (0-25) ");
+	state RETRIEVE_RECEIVERID_IN:
+		int temp = 0;
+		ser_inf(RETRIEVE_RECEIVERID_IN, "%u", &temp);
+		retrievePayload->receiverID = temp;
+
+	state RETRIEVE_INDEX_OUT:
+		 ser_out(RETRIEVE_INDEX_OUT, "\r\nWhat record index do you want to retrieve ");
+	state RETRIEVE_INDEX_IN:
+		int tempIndex = 0;
+		ser_inf(RETRIEVE_INDEX_IN, "%u",&tempIndex);
+		retrievePayload->recordIndex = tempIndex;
+	state RETRIEVE_PACKET:
+		packet = tcv_wnp(RETRIEVE_PACKET, sfd, RETRIEVE_PACKET_LEN);
+		packet[0] = NETWORK_ID;
+		//cast reteive  payload as a packet
+		struct retRecordMsg* recordRETPtr = (struct retRecordMsg *)(packet+1);
+		*recordRETPtr = *retrievePayload;
+	state RETRIEVE_SEND:
+		tcv_endp(packet);
+		delay(3000 * MS, RETRIEVE_LOOP);
+		release;
+	
+	state RETRIEVE_LOOP:
+		retrieveSendCount++;
+		// Send packet twice
+		if (retrieveSendCount < 2) {
+			proceed RETRIEVE_PACKET;
+		}
+		if(reponseTimeOut != 1)
+		{
+			ser_out(CREATE_LOOP, "\r\nNo response");
+		}
+		ufree(retrievePayload);
+		proceed MENU;
+
+	// ### retrieve END
+	// ### DISCOVERY REQUEST PROTOCOL ####
+	// Reset neighbors + build payload
     state DISCOVER_START:
 		discSendCount = 0;
 		neighborCount = 0;

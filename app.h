@@ -36,6 +36,9 @@
 #define CREATE_RESPACK_LEN	32
 #define RESPONSE_PACK_LEN 	32
 #define DELETE_PACK_LEN   	12
+#define RETRIEVE_PACKET_LEN    12
+#define RETRIEVE_RESPACK_LEN    32
+
 
 // Message Types
 #define DIS_REQ 0x00
@@ -114,7 +117,6 @@ struct retRecordMsg
     byte requestNumber;
     byte senderID;
     byte receiverID;
-    char record[RECORD_SIZE];
     byte recordIndex;
     byte padding; // not used
 };
