@@ -31,9 +31,11 @@
 #define CC1350_BUF_SZ     250
 
 // Packet Lengths (header(2) + payload + trailer(2))
-#define DIS_PACK_LEN     10
+#define DIS_PACK_LEN        10
 #define CREATE_PACK_LEN     30
 #define CREATE_RESPACK_LEN	32
+#define RESPONSE_PACK_LEN 	32
+#define DELETE_PACK_LEN   	12
 
 // Message Types
 #define DIS_REQ 0x00
@@ -48,6 +50,11 @@
 #define DATA_FULL 0x02
 #define DELETE_FAIL 0x03
 #define NO_ENTRY 0x04
+
+// Response protocol types
+#define CREATE		0x01
+#define RETRIEVE	0x02
+#define DELETE 		0x03
 
 
 /*** Message structures ***/
@@ -87,14 +94,13 @@ struct newRecordMsg
  */
 struct delRecordMsg
 {
-    word groupID;
-    byte type;
-    byte requestNumber;
-    byte senderID;
-    byte receiverID;
-    char record[RECORD_SIZE];
-    byte recordIndex;
-    byte padding; // not used
+	word groupID;
+	byte type;
+	byte requestNumber;
+	byte senderID;
+	byte receiverID;
+	byte recordIndex;
+	byte padding; // not used
 };
 
 /*
